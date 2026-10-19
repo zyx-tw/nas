@@ -145,7 +145,24 @@ export function createShares(config: Config, db: Db) {
     }
     const found = await resolve(id, url.searchParams.get("path"), ip)
 
-    // A file opens as itself, so the browser shows it with its own viewer or player.
+    // Video, audio and images fill the window in a bare player page.
+    const mime = Bun.file(found.path).type.split(";")[0]
+    const media = /^(video|audio)\//.test(mime) || (mime.startsWith("image/") && mime !== "image/svg+xml")
+    if (!suffix && found.stat.isFile() && media) {
+      if (req.method === "GET") {
+        db.query("update shares set downloads = downloads + 1 where id = ?").run(found.share.id)
+        log("share.view", { share: shortId(found.share.id), kind: mime.split("/")[0], sub: !!found.rel })
+      }
+      const src = escapeHtml(`/${id}/raw${found.rel ? `?path=${encodeURIComponent(found.rel)}` : ""}`)
+      const tag = mime.startsWith("image/")
+        ? `<img src="${src}" alt="">`
+        : mime.startsWith("video/")
+          ? `<video src="${src}" controls playsinline preload="metadata"></video>`
+          : `<audio src="${src}" controls preload="metadata"></audio>`
+      return barePage(found.name, tag, 200, "html,body{margin:0;height:100%;background:#000}img,video{display:block;width:100vw;height:100vh;object-fit:contain}audio{display:block;width:100%;position:absolute;top:50%;transform:translateY(-50%)}")
+    }
+
+    // Any other file opens as itself, so the browser shows it with its own viewer.
     if (suffix !== "/zip" && found.stat.isFile()) {
       const result = fileResponse(req, found.path, found.name, found.stat.size, url.searchParams.get("dl") === "1", PUBLIC_HEADERS)
       if (req.method === "GET" && result.response.status < 300 && !result.partial) {
