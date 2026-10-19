@@ -10,11 +10,13 @@ import type { Config } from "./config"
 import type { Credential, Db } from "./db"
 import { HttpError, json, readJson } from "./http"
 import { log } from "./otel"
+import { createLimiter } from "./shares"
 
 const SESSION_COOKIE = "nas_session"
 const FLOW_COOKIE = "nas_flow"
 const SESSION_DAYS = 30
 const FLOW_MS = 5 * 60_000
+const MAX_FLOWS = 1000
 const USER_ID = new TextEncoder().encode("nas-owner")
 
 type Flow = { challenge: string; kind: "register" | "login"; expires: number }
@@ -38,6 +40,7 @@ export function createAuth(config: Config, db: Db) {
   const secure = config.origin.startsWith("https:")
   const rpID = new URL(config.origin).hostname
   const flows = new Map<string, Flow>()
+  const limiter = createLimiter(60)
 
   const cookie = (name: string, value: string, maxAge: number) =>
     `${name}=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${secure ? "; Secure" : ""}`
@@ -64,7 +67,11 @@ export function createAuth(config: Config, db: Db) {
 
   function startFlow(kind: Flow["kind"], challenge: string, headers: Headers) {
     const now = Date.now()
-    for (const [id, flow] of flows) if (flow.expires < now) flows.delete(id)
+    // Every flow lives FLOW_MS, so insertion order is expiry order: drop from the front.
+    for (const [id, flow] of flows) {
+      if (flow.expires >= now && flows.size < MAX_FLOWS) break
+      flows.delete(id)
+    }
     const id = randomBytes(24).toString("base64url")
     flows.set(id, { challenge, kind, expires: now + FLOW_MS })
     headers.append("set-cookie", cookie(FLOW_COOKIE, id, FLOW_MS / 1000))
@@ -84,11 +91,16 @@ export function createAuth(config: Config, db: Db) {
     return credentialCount() === 0 && !!config.setupToken && typeof token === "string" && safeEqual(token, config.setupToken)
   }
 
-  async function handle(req: Request, path: string): Promise<Response> {
+  async function handle(req: Request, path: string, ip: string): Promise<Response> {
     if (path === "/api/auth/me" && req.method === "GET") {
       return json({ authenticated: session(req), setup: credentialCount() === 0 })
     }
     if (req.method !== "POST") throw new HttpError(405)
+    if (limiter.blocked(ip)) {
+      log("auth.throttled", {}, "WARN")
+      throw new HttpError(429)
+    }
+    limiter.miss(ip)
 
     if (path === "/api/auth/logout") {
       const token = cookies(req).get(SESSION_COOKIE)

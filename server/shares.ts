@@ -23,19 +23,36 @@ export function newShareId() {
   return out.padStart(22, "0")
 }
 
-// Misses per client IP. Too many in a window and every share request gets 429.
+// IPv4 as is; IPv6 by its /64, since one host usually owns a whole /64.
+export function limitKey(ip: string) {
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(ip)
+  if (mapped) return mapped[1]
+  if (!ip.includes(":")) return ip
+  const [head, tail = ""] = ip.split("::")
+  const left = head ? head.split(":") : []
+  const right = tail ? tail.split(":") : []
+  const groups = ip.includes("::") ? [...left, ...Array(Math.max(0, 8 - left.length - right.length)).fill("0"), ...right] : left
+  return `${groups.slice(0, 4).map(g => g.toLowerCase().replace(/^0+(?=.)/, "")).join(":")}::/64`
+}
+
+// Hits per client. Too many in a window and that client gets 429.
 export function createLimiter(limit = 20, windowMs = 10 * 60_000) {
   const hits = new Map<string, { count: number; reset: number }>()
+  let swept = Date.now()
   return {
     blocked(ip: string) {
-      const hit = hits.get(ip)
+      const hit = hits.get(limitKey(ip))
       return !!hit && hit.reset > Date.now() && hit.count >= limit
     },
     miss(ip: string) {
       const now = Date.now()
-      if (hits.size > 10_000) for (const [key, hit] of hits) if (hit.reset <= now) hits.delete(key)
-      const hit = hits.get(ip)
-      if (!hit || hit.reset <= now) hits.set(ip, { count: 1, reset: now + windowMs })
+      if (now - swept > 60_000) {
+        swept = now
+        for (const [key, hit] of hits) if (hit.reset <= now) hits.delete(key)
+      }
+      const key = limitKey(ip)
+      const hit = hits.get(key)
+      if (!hit || hit.reset <= now) hits.set(key, { count: 1, reset: now + windowMs })
       else hit.count++
     },
   }
@@ -156,8 +173,10 @@ export function createShares(config: Config, db: Db) {
     }
 
     if (!found.stat.isDirectory()) throw new HttpError(404)
-    db.query("update shares set downloads = downloads + 1 where id = ?").run(found.share.id)
-    log("share.zip", { share: shortId(found.share.id), sub: !!found.rel })
+    if (req.method === "GET") {
+      db.query("update shares set downloads = downloads + 1 where id = ?").run(found.share.id)
+      log("share.zip", { share: shortId(found.share.id), sub: !!found.rel })
+    }
     const response = downloadZip(walk(found.path, ""))
     const headers = new Headers(response.headers)
     for (const [k, v] of Object.entries(PUBLIC_HEADERS)) headers.set(k, v)

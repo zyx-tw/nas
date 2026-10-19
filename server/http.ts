@@ -15,9 +15,22 @@ export function json(body: unknown, init: { status?: number; headers?: HeaderMap
   return new Response(JSON.stringify(body), { ...init, headers })
 }
 
+const MAX_JSON = 64 * 1024
+
+// Reads at most 64 KB, so an anonymous POST cannot fill memory.
 export async function readJson(req: Request): Promise<Record<string, unknown>> {
+  if (Number(req.headers.get("content-length") ?? 0) > MAX_JSON) throw new HttpError(413)
+  const chunks: Uint8Array[] = []
+  let size = 0
+  if (req.body) {
+    for await (const chunk of req.body) {
+      size += chunk.byteLength
+      if (size > MAX_JSON) throw new HttpError(413)
+      chunks.push(chunk)
+    }
+  }
   try {
-    const body = await req.json()
+    const body = JSON.parse(Buffer.concat(chunks).toString("utf8"))
     if (body && typeof body === "object" && !Array.isArray(body)) return body as Record<string, unknown>
   } catch {
     // Fall through to the 400 below.
@@ -63,7 +76,8 @@ export function fileResponse(req: Request, path: string, name: string, size: num
   headers.set("content-type", type)
   headers.set("accept-ranges", "bytes")
   headers.set("content-disposition", contentDisposition(download || !inlineSafe(type) ? "attachment" : "inline", name))
-  headers.set("content-security-policy", FILE_CSP)
+  // Chrome's PDF viewer refuses a sandboxed document; PDFs never run page script anyway.
+  if (type.split(";")[0].trim() !== "application/pdf") headers.set("content-security-policy", FILE_CSP)
   headers.set("x-content-type-options", "nosniff")
   headers.set("cache-control", "private, no-cache")
   const range = parseRange(req.headers.get("range"), size)
