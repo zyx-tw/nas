@@ -16,7 +16,7 @@ You keep your files on your own server and open them from any browser. You send 
 
 - **Sign in with a passkey**: Touch ID or Face ID, no password.
 - **Manage files**: upload, make folders, rename, delete and download.
-- **Share a link**: `s.zyx.tw/<id>` opens a file or a folder, with an expiry date.
+- **Share a link**: `s.zyx.tw/<id>` opens the file itself in the browser, or a plain folder list.
 - **Revoke a link**: a revoked or expired link gives the same 404 as an unknown one.
 - **Stream big files**: uploads go straight to disk, and downloads support ranges.
 

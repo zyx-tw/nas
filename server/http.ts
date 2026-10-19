@@ -67,6 +67,27 @@ export function parseRange(header: string | null, size: number): { start: number
   return { start, end }
 }
 
+export const PUBLIC_HEADERS = { "x-robots-tag": "noindex, nofollow", "referrer-policy": "no-referrer" }
+
+export function escapeHtml(text: string) {
+  return text.replace(/[&<>"']/g, ch => `&#${ch.charCodeAt(0)};`)
+}
+
+// A plain page with the browser's own look: no app, no scripts.
+export function barePage(title: string, body: string, status = 200) {
+  const html = `<!doctype html><html lang="zh-TW"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>${escapeHtml(title)}</title><style>body{font:16px/1.6 system-ui,sans-serif;margin:16px}ul{list-style:none;padding:0;margin:0}a{color:inherit}</style></head><body>${body}</body></html>`
+  return new Response(html, {
+    status,
+    headers: {
+      ...PUBLIC_HEADERS,
+      "content-type": "text/html; charset=utf-8",
+      "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      "x-content-type-options": "nosniff",
+      "cache-control": "no-store",
+    },
+  })
+}
+
 export const FILE_CSP = "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'"
 
 export function fileResponse(req: Request, path: string, name: string, size: number, download: boolean, extra: HeaderMap = {}) {

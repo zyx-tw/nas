@@ -116,18 +116,18 @@ describe("files", () => {
 })
 
 describe("shares", () => {
-  test("a file link serves meta, raw and ranges", async () => {
+  test("a file link answers with the file itself, with ranges", async () => {
     const s = await share("hello.txt")
     expect(s.id).toMatch(/^[0-9A-Za-z]{22}$/)
     expect(s.url).toBe(`${SHARE}/${s.id}`)
-    const meta = await body(req(SHARE, `/api/s/${s.id}`))
-    expect(meta).toMatchObject({ name: "hello.txt", type: "file", size: 12 })
-    const raw = await req(SHARE, `/${s.id}/raw`)
+    const raw = await req(SHARE, `/${s.id}`)
+    expect(raw.headers.get("content-type")).toStartWith("text/plain")
+    expect(raw.headers.get("content-disposition")).toStartWith("inline")
     expect(await raw.text()).toBe("hello world!")
     expect(raw.headers.get("x-robots-tag")).toContain("noindex")
     expect(raw.headers.get("referrer-policy")).toBe("no-referrer")
     expect(raw.headers.get("content-security-policy")).toContain("sandbox")
-    const part = await req(SHARE, `/${s.id}/raw`, { headers: { range: "bytes=6-" } })
+    const part = await req(SHARE, `/${s.id}`, { headers: { range: "bytes=6-" } })
     expect(part.status).toBe(206)
     expect(await part.text()).toBe("world!")
     expect((await req(SHARE, `/${s.id}/raw`, { headers: { range: "bytes=99-" } })).status).toBe(416)
@@ -149,24 +149,32 @@ describe("shares", () => {
   test("revoked, expired and unknown links are the same 404", async () => {
     const s = await share("hello.txt")
     expect((await req(NAS, `/api/shares/${s.id}`, { method: "DELETE" })).status).toBe(200)
-    const revoked = await req(SHARE, `/api/s/${s.id}`)
+    const revoked = await req(SHARE, `/${s.id}`)
     const expiredId = newShareId()
     app.db.query("insert into shares (id, path, created_at, expires_at, downloads) values (?, 'hello.txt', 0, 1, 0)").run(expiredId)
-    const expired = await req(SHARE, `/api/s/${expiredId}`)
-    const unknown = await req(SHARE, `/api/s/${newShareId()}`)
+    const expired = await req(SHARE, `/${expiredId}`)
+    const unknown = await req(SHARE, `/${newShareId()}`)
+    const bodies = new Set<string>()
     for (const res of [revoked, expired, unknown]) {
       expect(res.status).toBe(404)
-      expect(await res.text()).toBe('{"error":"404"}')
+      bodies.add(await res.text())
     }
+    expect(bodies.size).toBe(1)
+    expect([...bodies][0]).toContain("連結無效")
   })
   test("a folder link lists, serves sub files, zips and refuses escapes", async () => {
     await upload("docs/b.txt", "B")
     const s = await share("docs", null)
     expect(s.expiresAt).toBeNull()
-    const meta = await body(req(SHARE, `/api/s/${s.id}`))
-    expect(meta.entries.map((e: { name: string }) => e.name)).toEqual(["a.txt", "b.txt"])
-    expect(await (await req(SHARE, `/${s.id}/raw?path=b.txt`)).text()).toBe("B")
-    expect((await req(SHARE, `/${s.id}/raw?path=../hello.txt`)).status).toBe(400)
+    const page = await req(SHARE, `/${s.id}`)
+    expect(page.headers.get("content-type")).toStartWith("text/html")
+    expect(page.headers.get("content-security-policy")).toContain("default-src 'none'")
+    const html = await page.text()
+    expect(html).toContain('href="?path=a.txt">a.txt</a>')
+    expect(html).toContain('href="?path=b.txt">b.txt</a>')
+    expect(html).not.toContain("<script")
+    expect(await (await req(SHARE, `/${s.id}?path=b.txt`)).text()).toBe("B")
+    expect((await req(SHARE, `/${s.id}?path=../hello.txt`)).status).toBe(400)
     const zip = await req(SHARE, `/${s.id}/zip`)
     expect(zip.status).toBe(200)
     const bytes = new Uint8Array(await zip.arrayBuffer())
@@ -175,14 +183,23 @@ describe("shares", () => {
   test("links follow a move and die with a delete", async () => {
     const s = await share("docs/a.txt")
     expect((await post("/api/files/move", { from: "docs", to: "papers" })).status).toBe(200)
-    expect(await (await req(SHARE, `/${s.id}/raw`)).text()).toBe("A")
+    expect(await (await req(SHARE, `/${s.id}`)).text()).toBe("A")
     expect((await req(NAS, "/api/files?path=papers", { method: "DELETE" })).status).toBe(200)
-    expect((await req(SHARE, `/${s.id}/raw`)).status).toBe(404)
+    expect((await req(SHARE, `/${s.id}`)).status).toBe(404)
   })
-  test("share page serves the app with noindex", async () => {
-    const res = await req(SHARE, `/${newShareId()}`)
-    expect(res.status).toBe(200)
-    expect(res.headers.get("x-robots-tag")).toContain("noindex")
+  test("folder names are escaped in the list", async () => {
+    await post("/api/files/folder", { path: "esc" })
+    await upload('esc/<img src=x onerror=alert(1)>.txt', "x")
+    const html = await (await req(SHARE, `/${(await share("esc")).id}`)).text()
+    expect(html).not.toContain("<img")
+    expect(html).toContain("&#60;img")
+  })
+  test("the share host serves no app and no api", async () => {
+    for (const path of ["/assets/app.js", "/api/files", "/favicon.ico"]) {
+      const res = await req(SHARE, path)
+      expect(res.status).toBe(404)
+      expect(res.headers.get("x-robots-tag")).toContain("noindex")
+    }
   })
   test("pdf previews without the sandbox, html keeps it", async () => {
     await upload("a.pdf", "%PDF-1.4")
@@ -206,7 +223,7 @@ describe("shares", () => {
   })
   test("too many misses from one IP are throttled", async () => {
     let last = 0
-    for (let i = 0; i < 25; i++) last = (await req(SHARE, `/api/s/${newShareId()}`)).status
+    for (let i = 0; i < 25; i++) last = (await req(SHARE, `/${newShareId()}`)).status
     expect(last).toBe(429)
   })
 })

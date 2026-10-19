@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // End to end in Chromium with a virtual passkey: register, upload, share,
-// open the share on the other host, download, revoke.
+// open the share on the other host, revoke.
 // Usage: node scripts/e2e.mjs <nas-origin> <share-origin> <setup-token>
 import { chromium } from "playwright"
 
@@ -49,17 +49,15 @@ try {
   const visitor = await browser.newContext({ acceptDownloads: true })
   const guest = await visitor.newPage()
   await guest.goto(url)
-  await guest.getByRole("heading", { name: "報告.txt" }).waitFor()
-  const [download] = await Promise.all([guest.waitForEvent("download"), guest.getByRole("link", { name: "下載" }).click()])
-  const text = await (await import("node:fs/promises")).readFile(await download.path(), "utf8")
-  if (text !== "hello from nas" || download.suggestedFilename() !== "報告.txt") throw new Error(`bad download ${download.suggestedFilename()} ${text}`)
-  step("a visitor without a session opened the link and downloaded the file")
+  const text = await guest.locator("body").innerText()
+  if (text.trim() !== "hello from nas") throw new Error(`bad share page: ${text}`)
+  step("a visitor without a session opened the link and saw the file itself")
 
   await page.getByRole("button", { name: "撤銷" }).first().click()
   await page.getByRole("alertdialog").getByRole("button", { name: "撤銷" }).click()
   await page.getByRole("alertdialog").waitFor({ state: "detached" })
   await guest.reload()
-  await guest.getByRole("heading", { name: "連結無效" }).waitFor()
+  if (!(await guest.locator("body").innerText()).includes("連結無效")) throw new Error("revoked link still opens")
   step("the revoked link shows 連結無效")
   await visitor.close()
 } finally {
