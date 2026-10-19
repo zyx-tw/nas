@@ -3,7 +3,7 @@
 ## Layout
 
 - `server/`: the Bun server. `app.ts` routes by host, `auth.ts` does passkeys and sessions, `files.ts` the owner file API, `shares.ts` links and the public routes, `paths.ts` path safety.
-- `src/`: the React app. `owner.tsx` is nas.zyx.tw, `share.tsx` is s.zyx.tw. The shell and `components/ui` come from the task-web starter and ui.zyx.tw; do not edit `components/ui`.
+- `src/`: the React app for nas.zyx.tw (`owner.tsx`). s.zyx.tw has no app: a file link answers with the file itself, and a folder link with a plain list from `barePage`. The shell and `components/ui` come from the task-web starter and ui.zyx.tw; do not edit `components/ui`.
 - `deploy/`: the systemd unit and the env file shape.
 
 ## Rules

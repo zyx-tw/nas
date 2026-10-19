@@ -10,17 +10,6 @@ export type Share = {
   active: boolean
 }
 
-export type SharedItem = {
-  name: string
-  root: string
-  path: string
-  type: "file" | "folder"
-  size: number
-  modified: number
-  mime: string | null
-  entries: Entry[] | null
-}
-
 export class ApiError extends Error {
   readonly status: number
   constructor(status: number, message: string) {

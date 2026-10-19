@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { downloadZip } from "client-zip"
 import type { Config } from "./config"
 import type { Db, Share } from "./db"
-import { HttpError, contentDisposition, fileResponse, json, readJson } from "./http"
+import { HttpError, PUBLIC_HEADERS, barePage, contentDisposition, escapeHtml, fileResponse, json, readJson } from "./http"
 import { listFolder } from "./files"
 import { cleanRel, resolveExisting } from "./paths"
 import { log } from "./otel"
@@ -132,15 +132,12 @@ export function createShares(config: Config, db: Db) {
     }
   }
 
-  const PUBLIC_HEADERS = { "x-robots-tag": "noindex, nofollow", "referrer-policy": "no-referrer" }
-
   // Public side, on the share host. Returns null when the path is not a share route.
   async function handlePublic(req: Request, url: URL, ip: string): Promise<Response | null> {
-    const meta = /^\/api\/s\/([^/]+)$/.exec(url.pathname)
-    const raw = /^\/([^/]+)\/raw$/.exec(url.pathname)
-    const zip = /^\/([^/]+)\/zip$/.exec(url.pathname)
-    const id = meta?.[1] ?? raw?.[1] ?? zip?.[1]
-    if (!id) return null
+    const match = /^\/([^/]+?)(\/raw|\/zip)?$/.exec(url.pathname)
+    // Only well-formed ids count as attempts; /favicon.ico and the like are a plain 404.
+    if (!match || !ID_PATTERN.test(match[1])) return null
+    const [, id, suffix] = match
     if (req.method !== "GET" && req.method !== "HEAD") throw new HttpError(405)
     if (limiter.blocked(ip)) {
       log("share.throttled", {}, "WARN")
@@ -148,22 +145,8 @@ export function createShares(config: Config, db: Db) {
     }
     const found = await resolve(id, url.searchParams.get("path"), ip)
 
-    if (meta) {
-      const folder = found.stat.isDirectory()
-      return json({
-        name: found.name,
-        root: found.share.path.split("/").pop(),
-        path: found.rel,
-        type: folder ? "folder" : "file",
-        size: folder ? 0 : found.stat.size,
-        modified: found.stat.mtimeMs,
-        mime: folder ? null : Bun.file(found.path).type,
-        entries: folder ? await listFolder(found.path) : null,
-      }, { headers: PUBLIC_HEADERS })
-    }
-
-    if (raw) {
-      if (!found.stat.isFile()) throw new HttpError(404)
+    // A file opens as itself, so the browser shows it with its own viewer or player.
+    if (suffix !== "/zip" && found.stat.isFile()) {
       const result = fileResponse(req, found.path, found.name, found.stat.size, url.searchParams.get("dl") === "1", PUBLIC_HEADERS)
       if (req.method === "GET" && result.response.status < 300 && !result.partial) {
         db.query("update shares set downloads = downloads + 1 where id = ?").run(found.share.id)
@@ -172,7 +155,22 @@ export function createShares(config: Config, db: Db) {
       return result.response
     }
 
+    if (suffix === "/raw") throw new HttpError(404)
     if (!found.stat.isDirectory()) throw new HttpError(404)
+
+    if (suffix !== "/zip") {
+      const entries = await listFolder(found.path)
+      const href = (rel: string) => (rel ? `?path=${encodeURIComponent(rel)}` : `/${id}`)
+      const items = [
+        ...(found.rel ? [`<li><a href="${escapeHtml(href(found.rel.split("/").slice(0, -1).join("/")))}">..</a></li>`] : []),
+        ...entries.map(entry => {
+          const rel = [found.rel, entry.name].filter(Boolean).join("/")
+          return `<li><a href="${escapeHtml(href(rel))}">${escapeHtml(entry.name)}${entry.type === "folder" ? "/" : ""}</a></li>`
+        }),
+      ]
+      return barePage(found.name, `<ul>${items.join("")}</ul>`)
+    }
+
     if (req.method === "GET") {
       db.query("update shares set downloads = downloads + 1 where id = ?").run(found.share.id)
       log("share.zip", { share: shortId(found.share.id), sub: !!found.rel })

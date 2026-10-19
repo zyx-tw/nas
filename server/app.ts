@@ -5,7 +5,7 @@ import { createAuth } from "./auth"
 import type { Config } from "./config"
 import { openDb } from "./db"
 import { createFiles } from "./files"
-import { HttpError, json } from "./http"
+import { HttpError, barePage, json } from "./http"
 import { log } from "./otel"
 import { cleanRel, within } from "./paths"
 import { createShares } from "./shares"
@@ -21,8 +21,8 @@ export function createApp(config: Config) {
   const nasHost = new URL(config.origin).host
   const shareHost = new URL(config.shareOrigin).host
 
-  // The SPA and its hashed assets, served to both hosts.
-  async function serveStatic(pathname: string, share: boolean) {
+  // The owner SPA and its hashed assets.
+  async function serveStatic(pathname: string) {
     let decoded: string
     try {
       decoded = decodeURIComponent(pathname)
@@ -38,10 +38,6 @@ export function createApp(config: Config) {
       "x-content-type-options": "nosniff",
       "cache-control": rel.startsWith("assets/") ? "public, max-age=31536000, immutable" : "no-cache",
     })
-    if (share) {
-      headers.set("x-robots-tag", "noindex, nofollow")
-      headers.set("referrer-policy", "no-referrer")
-    }
     return new Response(Bun.file(path), { headers })
   }
 
@@ -52,10 +48,9 @@ export function createApp(config: Config) {
     if (host === shareHost) {
       const response = await shares.handlePublic(req, url, ip)
       if (response) return response
-      if (url.pathname.startsWith("/api/")) throw new HttpError(404)
       // The share host has no home page of its own.
       if (url.pathname === "/") return Response.redirect("https://www.zyx.tw/", 302)
-      return serveStatic(url.pathname, true)
+      throw new HttpError(404)
     }
 
     if (host !== nasHost) throw new HttpError(421)
@@ -69,7 +64,7 @@ export function createApp(config: Config) {
       if (url.pathname.startsWith("/api/shares")) return shares.handleOwner(req, url)
       throw new HttpError(404)
     }
-    return serveStatic(url.pathname, false)
+    return serveStatic(url.pathname)
   }
 
   async function fetch(req: Request, ip = "unknown"): Promise<Response> {
@@ -78,7 +73,9 @@ export function createApp(config: Config) {
     try {
       response = await route(req, ip)
     } catch (error) {
-      if (error instanceof HttpError) {
+      if (error instanceof HttpError && req.headers.get("host") === shareHost) {
+        response = barePage("連結無效", error.status === 429 ? "請稍後再試" : "連結無效", error.status)
+      } else if (error instanceof HttpError) {
         response = json({ error: error.message || String(error.status) }, { status: error.status })
       } else {
         log("http.error", { error: String(error), path: new URL(req.url).pathname.startsWith("/api/") ? new URL(req.url).pathname : "page" }, "ERROR")
