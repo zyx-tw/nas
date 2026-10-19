@@ -1,0 +1,85 @@
+export class HttpError extends Error {
+  readonly status: number
+  constructor(status: number, message = "") {
+    super(message)
+    this.status = status
+  }
+}
+
+export type HeaderMap = Record<string, string>
+
+export function json(body: unknown, init: { status?: number; headers?: HeaderMap | Headers } = {}) {
+  const headers = new Headers(init.headers)
+  headers.set("content-type", "application/json; charset=utf-8")
+  headers.set("cache-control", "no-store")
+  return new Response(JSON.stringify(body), { ...init, headers })
+}
+
+export async function readJson(req: Request): Promise<Record<string, unknown>> {
+  try {
+    const body = await req.json()
+    if (body && typeof body === "object" && !Array.isArray(body)) return body as Record<string, unknown>
+  } catch {
+    // Fall through to the 400 below.
+  }
+  throw new HttpError(400, "bad json")
+}
+
+// Types a browser may render in place. Everything else downloads, so a shared
+// HTML or SVG file never runs as a page.
+export function inlineSafe(type: string) {
+  const mime = type.split(";")[0].trim().toLowerCase()
+  if (mime === "image/svg+xml") return false
+  return /^(image|video|audio)\//.test(mime) || mime === "application/pdf" || mime === "text/plain"
+}
+
+export function contentDisposition(kind: "inline" | "attachment", name: string) {
+  const ascii = name.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_")
+  return `${kind}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`
+}
+
+// One byte range from a Range header, or null for the whole file.
+export function parseRange(header: string | null, size: number): { start: number; end: number } | null | "invalid" {
+  if (!header) return null
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim())
+  if (!match || (match[1] === "" && match[2] === "")) return "invalid"
+  if (match[1] === "") {
+    const suffix = Number(match[2])
+    if (suffix === 0) return "invalid"
+    return { start: Math.max(0, size - suffix), end: size - 1 }
+  }
+  const start = Number(match[1])
+  const end = match[2] === "" ? size - 1 : Math.min(Number(match[2]), size - 1)
+  if (start >= size || end < start) return "invalid"
+  return { start, end }
+}
+
+export const FILE_CSP = "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'"
+
+export function fileResponse(req: Request, path: string, name: string, size: number, download: boolean, extra: HeaderMap = {}) {
+  const file = Bun.file(path)
+  const type = file.type || "application/octet-stream"
+  const headers = new Headers(extra)
+  headers.set("content-type", type)
+  headers.set("accept-ranges", "bytes")
+  headers.set("content-disposition", contentDisposition(download || !inlineSafe(type) ? "attachment" : "inline", name))
+  headers.set("content-security-policy", FILE_CSP)
+  headers.set("x-content-type-options", "nosniff")
+  headers.set("cache-control", "private, no-cache")
+  const range = parseRange(req.headers.get("range"), size)
+  if (range === "invalid") {
+    headers.set("content-range", `bytes */${size}`)
+    return { response: new Response(null, { status: 416, headers }), bytes: 0, partial: true }
+  }
+  if (req.method === "HEAD") {
+    headers.set("content-length", String(size))
+    return { response: new Response(null, { status: 200, headers }), bytes: 0, partial: false }
+  }
+  if (range) {
+    headers.set("content-range", `bytes ${range.start}-${range.end}/${size}`)
+    headers.set("content-length", String(range.end - range.start + 1))
+    return { response: new Response(file.slice(range.start, range.end + 1), { status: 206, headers }), bytes: range.end - range.start + 1, partial: range.start !== 0 }
+  }
+  headers.set("content-length", String(size))
+  return { response: new Response(file, { status: 200, headers }), bytes: size, partial: false }
+}
