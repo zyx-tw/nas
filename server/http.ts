@@ -74,14 +74,16 @@ export function escapeHtml(text: string) {
 }
 
 // A plain page with the browser's own look: no app, no scripts.
-export function barePage(title: string, body: string, status = 200) {
-  const html = `<!doctype html><html lang="zh-TW"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>${escapeHtml(title)}</title><style>body{font:16px/1.6 system-ui,sans-serif;margin:16px}ul{list-style:none;padding:0;margin:0}a{color:inherit}</style></head><body>${body}</body></html>`
+const BARE_STYLE = "body{font:16px/1.6 system-ui,sans-serif;margin:16px}ul{list-style:none;padding:0;margin:0}a{color:inherit}"
+
+export function barePage(title: string, body: string, status = 200, style = BARE_STYLE) {
+  const html = `<!doctype html><html lang="zh-TW"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>${escapeHtml(title)}</title><style>${style}</style></head><body>${body}</body></html>`
   return new Response(html, {
     status,
     headers: {
       ...PUBLIC_HEADERS,
       "content-type": "text/html; charset=utf-8",
-      "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      "content-security-policy": "default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
       "x-content-type-options": "nosniff",
       "cache-control": "no-store",
     },
@@ -96,9 +98,11 @@ export function fileResponse(req: Request, path: string, name: string, size: num
   const headers = new Headers(extra)
   headers.set("content-type", type)
   headers.set("accept-ranges", "bytes")
-  headers.set("content-disposition", contentDisposition(download || !inlineSafe(type) ? "attachment" : "inline", name))
-  // Chrome's PDF viewer refuses a sandboxed document; PDFs never run page script anyway.
-  if (type.split(";")[0].trim() !== "application/pdf") headers.set("content-security-policy", FILE_CSP)
+  const inline = !download && inlineSafe(type)
+  headers.set("content-disposition", contentDisposition(inline ? "inline" : "attachment", name))
+  // Only downloads get the sandbox. Inline types cannot run script, and Safari's
+  // media viewer and Chrome's PDF viewer both break inside a sandboxed document.
+  if (!inline) headers.set("content-security-policy", FILE_CSP)
   headers.set("x-content-type-options", "nosniff")
   headers.set("cache-control", "private, no-cache")
   const range = parseRange(req.headers.get("range"), size)
@@ -113,7 +117,7 @@ export function fileResponse(req: Request, path: string, name: string, size: num
   if (range) {
     headers.set("content-range", `bytes ${range.start}-${range.end}/${size}`)
     headers.set("content-length", String(range.end - range.start + 1))
-    return { response: new Response(file.slice(range.start, range.end + 1), { status: 206, headers }), bytes: range.end - range.start + 1, partial: range.start !== 0 }
+    return { response: new Response(file.slice(range.start, range.end + 1), { status: 206, headers }), bytes: range.end - range.start + 1, partial: true }
   }
   headers.set("content-length", String(size))
   return { response: new Response(file, { status: 200, headers }), bytes: size, partial: false }
