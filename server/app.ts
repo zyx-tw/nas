@@ -53,6 +53,8 @@ export function createApp(config: Config) {
       const response = await shares.handlePublic(req, url, ip)
       if (response) return response
       if (url.pathname.startsWith("/api/")) throw new HttpError(404)
+      // The share host has no home page of its own.
+      if (url.pathname === "/") return Response.redirect("https://www.zyx.tw/", 302)
       return serveStatic(url.pathname, true)
     }
 
@@ -61,7 +63,7 @@ export function createApp(config: Config) {
     if (url.pathname.startsWith("/api/")) {
       // Cookies are SameSite=Strict; the Origin check covers older browsers and non-browser clients.
       if (req.method !== "GET" && req.method !== "HEAD" && req.headers.get("origin") !== config.origin) throw new HttpError(403)
-      if (url.pathname.startsWith("/api/auth/")) return auth.handle(req, url.pathname)
+      if (url.pathname.startsWith("/api/auth/")) return auth.handle(req, url.pathname, ip)
       if (!auth.session(req)) throw new HttpError(401)
       if (url.pathname.startsWith("/api/files")) return files.handle(req, url)
       if (url.pathname.startsWith("/api/shares")) return shares.handleOwner(req, url)

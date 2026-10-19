@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createApp } from "./app"
 import { loadConfig } from "./config"
-import { newShareId } from "./shares"
+import { limitKey, newShareId } from "./shares"
 
 const NAS = "http://nas.test"
 const SHARE = "http://s.test"
@@ -64,6 +64,19 @@ describe("hosts and auth", () => {
     expect(good.status).toBe(200)
     expect((await body(good)).rp.id).toBe("nas.test")
     expect(good.headers.get("set-cookie")).toContain("nas_flow=")
+  })
+  test("an oversized json body is refused before it fills memory", async () => {
+    const big = "x".repeat(65 * 1024)
+    const declared = await req(NAS, "/api/auth/login/verify", { method: "POST", body: big, auth: false })
+    expect(declared.status).toBe(413)
+    const stream = new ReadableStream({
+      start(controller) {
+        for (let i = 0; i < 20; i++) controller.enqueue(new TextEncoder().encode("x".repeat(8192)))
+        controller.close()
+      },
+    })
+    const chunked = await req(NAS, "/api/auth/register/options", { method: "POST", body: stream, auth: false })
+    expect(chunked.status).toBe(413)
   })
   test("register verify without a flow fails", async () => {
     const res = await req(NAS, "/api/auth/register/verify", { method: "POST", body: JSON.stringify({ token: "setup-secret", response: {} }), auth: false })
@@ -170,6 +183,26 @@ describe("shares", () => {
     const res = await req(SHARE, `/${newShareId()}`)
     expect(res.status).toBe(200)
     expect(res.headers.get("x-robots-tag")).toContain("noindex")
+  })
+  test("pdf previews without the sandbox, html keeps it", async () => {
+    await upload("a.pdf", "%PDF-1.4")
+    const pdf = await req(SHARE, `/${(await share("a.pdf")).id}/raw`)
+    expect(pdf.headers.get("content-disposition")).toStartWith("inline")
+    expect(pdf.headers.get("content-security-policy")).toBeNull()
+    const html = await req(SHARE, `/${(await share("page.html")).id}/raw`)
+    expect(html.headers.get("content-security-policy")).toContain("sandbox")
+  })
+  test("limiter keys group IPv6 by /64", () => {
+    expect(limitKey("1.2.3.4")).toBe("1.2.3.4")
+    expect(limitKey("::ffff:1.2.3.4")).toBe("1.2.3.4")
+    expect(limitKey("2001:db8:1:2:aaaa::1")).toBe("2001:db8:1:2::/64")
+    expect(limitKey("2001:db8:1:2:bbbb:cccc:dddd:eeee")).toBe("2001:db8:1:2::/64")
+    expect(limitKey("2001:db8::1")).toBe("2001:db8:0:0::/64")
+  })
+  test("the share host root redirects to www.zyx.tw", async () => {
+    const res = await req(SHARE, "/")
+    expect(res.status).toBe(302)
+    expect(res.headers.get("location")).toBe("https://www.zyx.tw/")
   })
   test("too many misses from one IP are throttled", async () => {
     let last = 0
