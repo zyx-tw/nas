@@ -112,6 +112,10 @@ describe("files", () => {
     expect((await upload("docs/a.txt", "A")).status).toBe(200)
     expect((await upload("missing/a.txt", "A")).status).toBe(404)
     expect((await post("/api/files/move", { from: "docs", to: "docs/inner" })).status).toBe(400)
+    expect((await post("/api/files/folder", { path: "docs/inner" })).status).toBe(200)
+    expect((await upload("docs/inner/b.txt", "BB")).status).toBe(200)
+    const list = await body(req(NAS, "/api/files"))
+    expect(list.entries.find((e: { name: string }) => e.name === "docs").size).toBe(3)
   })
 })
 
