@@ -9,34 +9,27 @@ import type { Db, Share } from "./db"
 import { HttpError, fileResponse, json, readJson } from "./http"
 import { cleanRel, resolveExisting, resolveNew } from "./paths"
 import { log } from "./otel"
+import { createSizes } from "./sizes"
 
 export type Entry = { name: string; type: "file" | "folder"; size: number; modified: number }
 
-// Sum of regular files below dir; symlinks are skipped, like in the listing.
-async function folderSize(dir: string): Promise<number> {
-  let total = 0
-  for (const dirent of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
-    const path = join(dir, dirent.name)
-    if (dirent.isDirectory()) total += await folderSize(path)
-    else if (dirent.isFile()) total += (await lstat(path).catch(() => null))?.size ?? 0
-  }
-  return total
-}
-
 // Files and folders only; symlinks and special files stay hidden.
-export async function listFolder(dir: string): Promise<Entry[]> {
+// Folders get their size from folderSize when it is given, else 0.
+export async function listFolder(dir: string, folderSize?: (name: string) => Promise<number>): Promise<Entry[]> {
   const entries: Entry[] = []
   for (const dirent of await readdir(dir, { withFileTypes: true })) {
     if (!dirent.isFile() && !dirent.isDirectory()) continue
     const stat = await lstat(join(dir, dirent.name)).catch(() => null)
     if (!stat) continue
-    entries.push({ name: dirent.name, type: dirent.isDirectory() ? "folder" : "file", size: dirent.isDirectory() ? await folderSize(join(dir, dirent.name)) : stat.size, modified: stat.mtimeMs })
+    entries.push({ name: dirent.name, type: dirent.isDirectory() ? "folder" : "file", size: dirent.isDirectory() ? ((await folderSize?.(dirent.name)) ?? 0) : stat.size, modified: stat.mtimeMs })
   }
   return entries.sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name, "zh-Hant") : a.type === "folder" ? -1 : 1))
 }
 
 export function createFiles(config: Config, db: Db) {
   const under = (path: string, rel: string) => path === rel || path.startsWith(rel + "/")
+  const sizes = createSizes(config.root, db)
+  sizes.start()
 
   async function upload(req: Request, rel: string, overwrite: boolean) {
     if (!req.body) throw new HttpError(400, "empty body")
@@ -69,6 +62,7 @@ export function createFiles(config: Config, db: Db) {
       await unlink(tmp).catch(() => {})
       throw error
     }
+    sizes.changed(rel)
     const size = (await lstat(target)).size
     log("file.upload", { bytes: size, overwrite })
     return json({ ok: true, size })
@@ -81,7 +75,7 @@ export function createFiles(config: Config, db: Db) {
       const rel = cleanRel(url.searchParams.get("path"))
       const dir = await resolveExisting(config.root, rel)
       if (!(await lstat(dir)).isDirectory()) throw new HttpError(400, "not a folder")
-      return json({ path: rel, entries: await listFolder(dir) })
+      return json({ path: rel, entries: await listFolder(dir, name => sizes.get(rel ? `${rel}/${name}` : name)) })
     }
 
     if (path === "/api/files/content" && (req.method === "GET" || req.method === "HEAD")) {
@@ -99,6 +93,7 @@ export function createFiles(config: Config, db: Db) {
     if (path === "/api/files/folder" && req.method === "POST") {
       const rel = cleanRel((await readJson(req)).path)
       await mkdir(await resolveNew(config.root, rel))
+      sizes.changed(rel)
       log("file.folder")
       return json({ ok: true })
     }
@@ -110,6 +105,8 @@ export function createFiles(config: Config, db: Db) {
       if (!from || under(to, from)) throw new HttpError(400, "bad move")
       const source = await resolveExisting(config.root, from)
       await rename(source, await resolveNew(config.root, to))
+      sizes.removed(from)
+      sizes.changed(to)
       // Links follow the file: rewrite every share at or below the old path.
       const shares = db.query("select id, path from shares").all() as Pick<Share, "id" | "path">[]
       const update = db.query("update shares set path = ? where id = ?")
@@ -124,6 +121,7 @@ export function createFiles(config: Config, db: Db) {
       const rel = cleanRel(url.searchParams.get("path"))
       if (!rel) throw new HttpError(400, "bad path")
       await rm(await resolveExisting(config.root, rel), { recursive: true })
+      sizes.removed(rel)
       const shares = db.query("select id, path from shares").all() as Pick<Share, "id" | "path">[]
       const remove = db.query("delete from shares where id = ?")
       db.transaction(() => {
