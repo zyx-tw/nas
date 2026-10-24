@@ -12,6 +12,17 @@ import { log } from "./otel"
 
 export type Entry = { name: string; type: "file" | "folder"; size: number; modified: number }
 
+// Sum of regular files below dir; symlinks are skipped, like in the listing.
+async function folderSize(dir: string): Promise<number> {
+  let total = 0
+  for (const dirent of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
+    const path = join(dir, dirent.name)
+    if (dirent.isDirectory()) total += await folderSize(path)
+    else if (dirent.isFile()) total += (await lstat(path).catch(() => null))?.size ?? 0
+  }
+  return total
+}
+
 // Files and folders only; symlinks and special files stay hidden.
 export async function listFolder(dir: string): Promise<Entry[]> {
   const entries: Entry[] = []
@@ -19,7 +30,7 @@ export async function listFolder(dir: string): Promise<Entry[]> {
     if (!dirent.isFile() && !dirent.isDirectory()) continue
     const stat = await lstat(join(dir, dirent.name)).catch(() => null)
     if (!stat) continue
-    entries.push({ name: dirent.name, type: dirent.isDirectory() ? "folder" : "file", size: dirent.isDirectory() ? 0 : stat.size, modified: stat.mtimeMs })
+    entries.push({ name: dirent.name, type: dirent.isDirectory() ? "folder" : "file", size: dirent.isDirectory() ? await folderSize(join(dir, dirent.name)) : stat.size, modified: stat.mtimeMs })
   }
   return entries.sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name, "zh-Hant") : a.type === "folder" ? -1 : 1))
 }

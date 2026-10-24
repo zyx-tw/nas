@@ -287,7 +287,7 @@ function Files({ onSignedOut }: { onSignedOut: () => void }) {
                     </a>
                   )}
                 </TableCell>
-                <TableCell className="hidden text-right whitespace-nowrap text-muted-foreground tabular-nums sm:table-cell">{entry.type === "file" ? formatSize(entry.size) : ""}</TableCell>
+                <TableCell className="hidden text-right whitespace-nowrap text-muted-foreground tabular-nums sm:table-cell">{formatSize(entry.size)}</TableCell>
                 <TableCell className="hidden text-right whitespace-nowrap text-muted-foreground tabular-nums md:table-cell">{formatDate(entry.modified)}</TableCell>
                 <TableCell>
                   <DropdownMenu>
