@@ -116,6 +116,9 @@ describe("files", () => {
     expect((await upload("docs/inner/b.txt", "BB")).status).toBe(200)
     const list = await body(req(NAS, "/api/files"))
     expect(list.entries.find((e: { name: string }) => e.name === "docs").size).toBe(3)
+    expect((await upload("docs/inner/c.txt", "CCCC")).status).toBe(200)
+    const after = await body(req(NAS, "/api/files"))
+    expect(after.entries.find((e: { name: string }) => e.name === "docs").size).toBe(7)
   })
 })
 
