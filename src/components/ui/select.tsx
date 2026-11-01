@@ -1,10 +1,9 @@
-"use client"
-
 import { Select as SelectPrimitive } from "@base-ui/react/select"
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react"
 
 import { cn } from "../../lib/utils"
-import { fieldTriggerClassName } from "./field-trigger"
+import { FrameEdges, WindowEdges } from "./frame"
+import { fieldFrameClassName, fieldTriggerClassName } from "./field-trigger"
 
 const Select = SelectPrimitive.Root
 
@@ -44,6 +43,7 @@ function SelectTrigger({
       <SelectPrimitive.Icon
         render={<ChevronDownIcon className="text-muted-foreground" />}
       />
+      <FrameEdges className={fieldFrameClassName} />
     </SelectPrimitive.Trigger>
   )
 }
@@ -70,13 +70,13 @@ function SelectContent({
         align={align}
         alignOffset={alignOffset}
         alignItemWithTrigger={alignItemWithTrigger}
-        className="isolate z-50"
+        className="group/window isolate z-50"
       >
         <SelectPrimitive.Popup
           data-slot="select-content"
           data-align-trigger={alignItemWithTrigger}
           className={cn(
-            "relative isolate z-50 max-h-(--available-height) w-menu min-w-40 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-menu border border-border bg-transparent text-foreground shadow-md backdrop-blur-md duration-overlay data-[align-trigger=true]:zoom-in-100 data-[align-trigger=true]:zoom-out-100 data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+            "relative isolate z-50 max-h-(--available-height) w-menu min-w-40 origin-(--transform-origin) overflow-x-hidden overflow-y-auto bg-background text-foreground duration-overlay data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
             className
           )}
           {...props}
@@ -91,6 +91,7 @@ function SelectContent({
             <ChevronDownIcon />
           </SelectPrimitive.ScrollDownArrow>
         </SelectPrimitive.Popup>
+        <WindowEdges />
       </SelectPrimitive.Positioner>
     </SelectPrimitive.Portal>
   )
@@ -118,7 +119,7 @@ function SelectItem({
     <SelectPrimitive.Item
       data-slot="select-item"
       className={cn(
-        "relative flex w-full cursor-default items-center gap-2 rounded-control py-2 pr-9 pl-3 text-body outline-hidden select-none focus:bg-muted data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+        "relative flex w-full cursor-default items-center gap-2 py-2 pr-9 pl-3 text-body outline-hidden select-none focus:bg-muted data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
         className
       )}
       {...props}
