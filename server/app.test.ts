@@ -211,7 +211,7 @@ describe("shares", () => {
       bodies.add(await res.text())
     }
     expect(bodies.size).toBe(1)
-    expect([...bodies][0]).toContain("連結無效")
+    expect([...bodies][0]).toContain("Invalid link")
   })
   test("a folder link lists, serves sub files, zips and refuses escapes", async () => {
     await upload("docs/b.txt", "B")

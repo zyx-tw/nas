@@ -17,9 +17,9 @@ import { ApiError, api, formatDate, formatSize, joinPath, post, uploadFile, type
 type Me = { authenticated: boolean }
 
 function failMessage(error: unknown) {
-  if (error instanceof ApiError && error.status === 409) return "已有同名項目"
-  if (error instanceof ApiError && error.status === 401) return "請重新登入"
-  return "操作失敗"
+  if (error instanceof ApiError && error.status === 409) return "Name already taken"
+  if (error instanceof ApiError && error.status === 401) return "Sign in again"
+  return "Something failed"
 }
 
 function readPath() {
@@ -29,14 +29,14 @@ function readPath() {
 async function copy(text: string) {
   try {
     await navigator.clipboard.writeText(text)
-    toast.success("已複製連結")
+    toast.success("Link copied")
   } catch {
-    toast.error("無法複製")
+    toast.error("Could not copy")
   }
 }
 
 function expiry(share: Share) {
-  return share.expiresAt === null ? "永久" : formatDate(share.expiresAt)
+  return share.expiresAt === null ? "Never" : formatDate(share.expiresAt)
 }
 
 export function OwnerApp() {
@@ -49,7 +49,7 @@ export function OwnerApp() {
   // Sign-in happens at auth.zyx.tw; it posts back to /auth/callback.
   const login = () => window.location.assign("/auth/start")
 
-  // Signing out here alone would let 登入 come straight back through auth.zyx.tw,
+  // Signing out here alone would let Sign in come straight back through auth.zyx.tw,
   // so finish at auth.zyx.tw, where "Sign out" ends every service in this browser.
   async function logout() {
     await post("/api/auth/logout", {}).catch(() => {})
@@ -58,9 +58,9 @@ export function OwnerApp() {
 
   const actions = (
     <>
-      <TaskThemeToggle lang="zh-TW" />
+      <TaskThemeToggle />
       {me?.authenticated && (
-        <Button type="button" variant="ghost" size="icon" className="-m-3" onClick={logout} aria-label="登出" title="登出">
+        <Button type="button" variant="ghost" size="icon" className="-m-3" onClick={logout} aria-label="Sign out" title="Sign out">
           <LogOut aria-hidden />
         </Button>
       )}
@@ -68,10 +68,10 @@ export function OwnerApp() {
   )
 
   return (
-    <TaskShell title="NAS" lang="zh-TW" actions={actions} wide>
+    <TaskShell title="NAS" actions={actions} wide>
       {me && !me.authenticated && (
-        <section aria-label="登入" className="flex gap-3">
-          <Button onClick={login}>登入</Button>
+        <section aria-label="Sign in" className="flex gap-3">
+          <Button onClick={login}>Sign in</Button>
         </section>
       )}
       {me?.authenticated && <Workspace onSignedOut={() => setMe({ authenticated: false })} />}
@@ -84,8 +84,8 @@ function Workspace({ onSignedOut }: { onSignedOut: () => void }) {
   return (
     <Tabs value={tab} onValueChange={value => setTab(value as "files" | "links")}>
       <TabsList className="mb-6">
-        <TabsTrigger value="files">檔案</TabsTrigger>
-        <TabsTrigger value="links">連結</TabsTrigger>
+        <TabsTrigger value="files">Files</TabsTrigger>
+        <TabsTrigger value="links">Links</TabsTrigger>
       </TabsList>
       {tab === "files" ? <Files onSignedOut={onSignedOut} /> : <Links onSignedOut={onSignedOut} />}
     </Tabs>
@@ -135,7 +135,7 @@ function Files({ onSignedOut }: { onSignedOut: () => void }) {
       reload()
     } catch (error) {
       if (error instanceof ApiError && error.status === 409) {
-        toast.error(`已有 ${file.name}`, { action: { label: "覆蓋", onClick: () => void sendOne(file, true) } })
+        toast.error(`${file.name} already exists`, { action: { label: "Replace", onClick: () => void sendOne(file, true) } })
       } else fail(error)
     } finally {
       setUploads(list => list.filter(u => u.key !== key))
@@ -148,7 +148,7 @@ function Files({ onSignedOut }: { onSignedOut: () => void }) {
 
   async function submitName(name: string) {
     if (!name || name.includes("/")) {
-      toast.error("名稱無效")
+      toast.error("Invalid name")
       return false
     }
     try {
@@ -177,7 +177,7 @@ function Files({ onSignedOut }: { onSignedOut: () => void }) {
 
   return (
     <section
-      aria-label="檔案"
+      aria-label="Files"
       className={dragging ? "rounded-surface bg-muted/50" : undefined}
       onDragOver={event => {
         if (!event.dataTransfer.types.includes("Files")) return
@@ -194,8 +194,8 @@ function Files({ onSignedOut }: { onSignedOut: () => void }) {
       }}
     >
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <nav aria-label="路徑" className="flex min-w-0 flex-wrap items-center gap-1 text-body text-muted-foreground">
-          <button type="button" className="hover:text-foreground" onClick={() => open("")}>檔案</button>
+        <nav aria-label="Path" className="flex min-w-0 flex-wrap items-center gap-1 text-body text-muted-foreground">
+          <button type="button" className="hover:text-foreground" onClick={() => open("")}>Files</button>
           {crumbs.map((part, index) => (
             <span key={index} className="flex items-center gap-1">
               <span aria-hidden>/</span>
@@ -206,11 +206,11 @@ function Files({ onSignedOut }: { onSignedOut: () => void }) {
         <div className="flex gap-3">
           <Button variant="outline" onClick={() => setNaming({ mode: "folder" })}>
             <FolderPlus aria-hidden />
-            新資料夾
+            New folder
           </Button>
           <Button onClick={() => input.current?.click()}>
             <Upload aria-hidden />
-            上傳
+            Upload
           </Button>
           <input
             ref={input}
@@ -226,7 +226,7 @@ function Files({ onSignedOut }: { onSignedOut: () => void }) {
       </div>
 
       {uploads.length > 0 && (
-        <ul aria-label="上傳中" className="mb-4 flex flex-col gap-2">
+        <ul aria-label="Uploading" className="mb-4 flex flex-col gap-2">
           {uploads.map(u => (
             <li key={u.key} className="flex items-center justify-between gap-4 text-caption text-muted-foreground">
               <span className="truncate">{u.name}</span>
@@ -240,16 +240,16 @@ function Files({ onSignedOut }: { onSignedOut: () => void }) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>名稱</TableHead>
-              <TableHead className="hidden text-right sm:table-cell">大小</TableHead>
-              <TableHead className="hidden text-right md:table-cell">修改時間</TableHead>
-              <TableHead className="w-10"><span className="sr-only">操作</span></TableHead>
+              <TableHead>Name</TableHead>
+              <TableHead className="hidden text-right sm:table-cell">Size</TableHead>
+              <TableHead className="hidden text-right md:table-cell">Modified</TableHead>
+              <TableHead className="w-10"><span className="sr-only">Actions</span></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {entries.length === 0 && (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={4} className="py-10 text-center text-muted-foreground">空資料夾</TableCell>
+                <TableCell colSpan={4} className="py-10 text-center text-muted-foreground">Empty folder</TableCell>
               </TableRow>
             )}
             {entries.map(entry => (
@@ -271,14 +271,14 @@ function Files({ onSignedOut }: { onSignedOut: () => void }) {
                 <TableCell className="hidden text-right whitespace-nowrap text-muted-foreground tabular-nums md:table-cell">{formatDate(entry.modified)}</TableCell>
                 <TableCell>
                   <DropdownMenu>
-                    <DropdownMenuTrigger render={<Button variant="ghost" size="icon" aria-label={`${entry.name} 的操作`} />}>
+                    <DropdownMenuTrigger render={<Button variant="ghost" size="icon" aria-label={`Actions for ${entry.name}`} />}>
                       <MoreHorizontal aria-hidden />
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      {entry.type === "file" && <DropdownMenuItem render={<a href={contentUrl(entry, true)} />}>下載</DropdownMenuItem>}
-                      <DropdownMenuItem onClick={() => setSharing(entry)}>分享</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setNaming({ mode: "rename", entry })}>重新命名</DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => setDeleting(entry)}>刪除</DropdownMenuItem>
+                      {entry.type === "file" && <DropdownMenuItem render={<a href={contentUrl(entry, true)} />}>Download</DropdownMenuItem>}
+                      <DropdownMenuItem onClick={() => setSharing(entry)}>Share</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setNaming({ mode: "rename", entry })}>Rename</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setDeleting(entry)}>Delete</DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </TableCell>
@@ -291,17 +291,17 @@ function Files({ onSignedOut }: { onSignedOut: () => void }) {
       <NameDialog
         key={naming ? (naming.mode === "rename" ? `rename:${naming.entry.name}` : "folder") : "closed"}
         open={naming !== null}
-        title={naming?.mode === "rename" ? "重新命名" : "新資料夾"}
+        title={naming?.mode === "rename" ? "Rename" : "New folder"}
         initial={naming?.mode === "rename" ? naming.entry.name : ""}
-        confirm={naming?.mode === "rename" ? "儲存" : "建立"}
+        confirm={naming?.mode === "rename" ? "Save" : "Create"}
         onClose={() => setNaming(null)}
         onSubmit={submitName}
       />
       <ShareDialog key={sharing?.name ?? "none"} path={sharing ? joinPath(path, sharing.name) : null} name={sharing?.name ?? ""} onClose={() => setSharing(null)} onError={fail} />
       <ConfirmDialog
         open={deleting !== null}
-        title={`刪除「${deleting?.name ?? ""}」？`}
-        confirm="刪除"
+        title={`Delete ${deleting?.name ?? ""}?`}
+        confirm="Delete"
         onClose={() => setDeleting(null)}
         onConfirm={() => (deleting ? remove(deleting) : Promise.resolve())}
       />
@@ -336,7 +336,7 @@ function NameDialog({ open, title, initial, confirm, onClose, onSubmit }: {
         </DialogHeader>
         <form onSubmit={submit} className="flex flex-col gap-6">
           <div className="flex flex-col gap-2">
-            <Label htmlFor="name">名稱</Label>
+            <Label htmlFor="name">Name</Label>
             <Input id="name" value={name} onChange={event => setName(event.target.value)} autoFocus autoComplete="off" />
           </div>
           <DialogFooter>
@@ -349,10 +349,10 @@ function NameDialog({ open, title, initial, confirm, onClose, onSubmit }: {
 }
 
 const DAYS = [
-  { value: "1", label: "1 天" },
-  { value: "7", label: "7 天" },
-  { value: "30", label: "30 天" },
-  { value: "0", label: "永久" },
+  { value: "1", label: "1 day" },
+  { value: "7", label: "7 days" },
+  { value: "30", label: "30 days" },
+  { value: "0", label: "Never expires" },
 ]
 
 function ShareDialog({ path, name, onClose, onError }: { path: string | null; name: string; onClose: () => void; onError: (error: unknown) => void }) {
@@ -396,20 +396,20 @@ function ShareDialog({ path, name, onClose, onError }: { path: string | null; na
     <Dialog open={path !== null} onOpenChange={next => !next && onClose()}>
       <DialogContent size="wide">
         <DialogHeader>
-          <DialogTitle className="truncate">分享「{name}」</DialogTitle>
+          <DialogTitle className="truncate">Share {name}</DialogTitle>
         </DialogHeader>
         {shares.length > 0 && (
-          <ul aria-label="有效連結" className="flex flex-col gap-3">
+          <ul aria-label="Active links" className="flex flex-col gap-3">
             {shares.map(share => (
               <li key={share.id} className="flex items-center gap-3">
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-mono text-caption">{share.url}</p>
-                  <p className="text-caption text-muted-foreground">{share.expiresAt === null ? "永久有效" : `到期 ${expiry(share)}`}，下載 {share.downloads} 次</p>
+                  <p className="text-caption text-muted-foreground">{share.expiresAt === null ? "Never expires" : `Expires ${expiry(share)}`}, {share.downloads} downloads</p>
                 </div>
-                <Button variant="ghost" size="icon" aria-label="複製" title="複製" onClick={() => void copy(share.url)}>
+                <Button variant="ghost" size="icon" aria-label="Copy" title="Copy" onClick={() => void copy(share.url)}>
                   <Copy aria-hidden />
                 </Button>
-                <Button variant="ghost" size="icon" aria-label="撤銷" title="撤銷" onClick={() => setRevoking(share)}>
+                <Button variant="ghost" size="icon" aria-label="Revoke" title="Revoke" onClick={() => setRevoking(share)}>
                   <X aria-hidden />
                 </Button>
               </li>
@@ -417,7 +417,7 @@ function ShareDialog({ path, name, onClose, onError }: { path: string | null; na
           </ul>
         )}
         <div className="flex flex-col gap-2">
-          <Label htmlFor="days">期限</Label>
+          <Label htmlFor="days">Expires</Label>
           <div className="flex gap-3">
             <Select items={DAYS} value={days} onValueChange={value => value && setDays(value)}>
               <SelectTrigger id="days" className="flex-1">
@@ -427,10 +427,10 @@ function ShareDialog({ path, name, onClose, onError }: { path: string | null; na
                 {DAYS.map(option => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Button onClick={create} disabled={busy}>建立連結</Button>
+            <Button onClick={create} disabled={busy}>Create link</Button>
           </div>
         </div>
-        <ConfirmDialog open={revoking !== null} title="撤銷這個連結？" confirm="撤銷" onClose={() => setRevoking(null)} onConfirm={() => (revoking ? revoke(revoking) : Promise.resolve())} />
+        <ConfirmDialog open={revoking !== null} title="Revoke this link?" confirm="Revoke" onClose={() => setRevoking(null)} onConfirm={() => (revoking ? revoke(revoking) : Promise.resolve())} />
       </DialogContent>
     </Dialog>
   )
@@ -464,20 +464,20 @@ function Links({ onSignedOut }: { onSignedOut: () => void }) {
   if (!shares) return null
 
   return (
-    <section aria-label="連結">
+    <section aria-label="Links">
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>檔案</TableHead>
-            <TableHead className="hidden text-right sm:table-cell">到期</TableHead>
-            <TableHead className="hidden text-right md:table-cell">下載</TableHead>
-            <TableHead className="w-24"><span className="sr-only">操作</span></TableHead>
+            <TableHead>File</TableHead>
+            <TableHead className="hidden text-right sm:table-cell">Expires</TableHead>
+            <TableHead className="hidden text-right md:table-cell">Downloads</TableHead>
+            <TableHead className="w-24"><span className="sr-only">Actions</span></TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {shares.length === 0 && (
             <TableRow className="hover:bg-transparent">
-              <TableCell colSpan={4} className="py-10 text-center text-muted-foreground">沒有連結</TableCell>
+              <TableCell colSpan={4} className="py-10 text-center text-muted-foreground">No links</TableCell>
             </TableRow>
           )}
           {shares.map(share => (
@@ -485,14 +485,14 @@ function Links({ onSignedOut }: { onSignedOut: () => void }) {
               <TableCell className="max-w-0 w-full">
                 <span className="block truncate">{share.path}</span>
               </TableCell>
-              <TableCell className="hidden text-right whitespace-nowrap tabular-nums sm:table-cell">{share.active ? expiry(share) : "已過期"}</TableCell>
+              <TableCell className="hidden text-right whitespace-nowrap tabular-nums sm:table-cell">{share.active ? expiry(share) : "Expired"}</TableCell>
               <TableCell className="hidden text-right tabular-nums md:table-cell">{share.downloads}</TableCell>
               <TableCell>
                 <div className="flex justify-end gap-1">
-                  <Button variant="ghost" size="icon" aria-label="複製" title="複製" disabled={!share.active} onClick={() => void copy(share.url)}>
+                  <Button variant="ghost" size="icon" aria-label="Copy" title="Copy" disabled={!share.active} onClick={() => void copy(share.url)}>
                     <Copy aria-hidden />
                   </Button>
-                  <Button variant="ghost" size="icon" aria-label="撤銷" title="撤銷" onClick={() => setRevoking(share)}>
+                  <Button variant="ghost" size="icon" aria-label="Revoke" title="Revoke" onClick={() => setRevoking(share)}>
                     <X aria-hidden />
                   </Button>
                 </div>
@@ -501,7 +501,7 @@ function Links({ onSignedOut }: { onSignedOut: () => void }) {
           ))}
         </TableBody>
       </Table>
-      <ConfirmDialog open={revoking !== null} title="撤銷這個連結？" confirm="撤銷" onClose={() => setRevoking(null)} onConfirm={() => (revoking ? revoke(revoking) : Promise.resolve())} />
+      <ConfirmDialog open={revoking !== null} title="Revoke this link?" confirm="Revoke" onClose={() => setRevoking(null)} onConfirm={() => (revoking ? revoke(revoking) : Promise.resolve())} />
     </section>
   )
 }
@@ -534,7 +534,7 @@ function ConfirmDialog({ open, title, confirm, onClose, onConfirm }: {
           <AlertDialogTitle className="break-all">{title}</AlertDialogTitle>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={busy}>取消</AlertDialogCancel>
+          <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
           <Button variant="destructive" disabled={busy} onClick={run}>{confirm}</Button>
         </AlertDialogFooter>
       </AlertDialogContent>
