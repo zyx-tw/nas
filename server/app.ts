@@ -3,7 +3,7 @@ import { lstat } from "node:fs/promises"
 import { join } from "node:path"
 import { createAuth } from "./auth"
 import type { Config } from "./config"
-import { openDb } from "./db"
+import { openDb, spendToken } from "./db"
 import { createFiles } from "./files"
 import { type Gate, createGate } from "./gate"
 import { HttpError, barePage, json } from "./http"
@@ -13,9 +13,12 @@ import { createShares } from "./shares"
 
 const APP_CSP = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 
-export function createApp(config: Config, gate: Gate = createGate({ authOrigin: config.authOrigin, app: "nas", origin: config.origin, publicKey: config.authKey })) {
+export function createApp(config: Config, testGate?: Gate) {
   for (const dir of [config.data, config.root, config.tmp]) mkdirSync(dir, { recursive: true })
   const db = openDb(join(config.data, "nas.db"))
+  const gate =
+    testGate ??
+    createGate({ authOrigin: config.authOrigin, app: "nas", origin: config.origin, publicKey: config.authKey, spend: (jti, expiresAt) => spendToken(db, jti, expiresAt) })
   const auth = createAuth(config, db, gate)
   const files = createFiles(config, db)
   const shares = createShares(config, db)

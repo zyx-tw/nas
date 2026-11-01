@@ -49,9 +49,11 @@ export function OwnerApp() {
   // Sign-in happens at auth.zyx.tw; it posts back to /auth/callback.
   const login = () => window.location.assign("/auth/start")
 
+  // Signing out here alone would let 登入 come straight back through auth.zyx.tw,
+  // so finish at auth.zyx.tw, where "Sign out" ends every service in this browser.
   async function logout() {
     await post("/api/auth/logout", {}).catch(() => {})
-    setMe({ authenticated: false })
+    window.location.assign("https://auth.zyx.tw/")
   }
 
   const actions = (

@@ -23,8 +23,13 @@ export type GateConfig = {
   publicKey: JWK
   /** How long a live answer is reused. */
   liveCacheMs?: number
-  /** How long a past "live" answer stands while auth cannot be reached. */
+  /** How long a past "live" answer stands while auth cannot be reached. 0 fails closed at once. */
   liveGraceMs?: number
+  /**
+   * Marks a token id as used and returns false if it already was. Back it with
+   * the service's database so a restart does not forget. Default: memory.
+   */
+  spend?: (jti: string, expiresAt: number) => boolean
 }
 
 export type Grant = { sid: string; authTime: number; expiresAt: number }
@@ -39,6 +44,23 @@ export class GateError extends Error {
 
 const STATE_COOKIE = "__Host-gate_state"
 const MAX_TOKEN = 4096
+const MAX_BODY = 8192
+
+/** The form body, read up to MAX_BODY bytes, so an anonymous post cannot fill memory. */
+async function readCapped(req: Request) {
+  if (!(req.headers.get("content-type") ?? "").startsWith("application/x-www-form-urlencoded")) throw new GateError(415, "type")
+  if (Number(req.headers.get("content-length") ?? 0) > MAX_BODY) throw new GateError(413, "size")
+  const chunks: Uint8Array[] = []
+  let size = 0
+  if (req.body) {
+    for await (const chunk of req.body) {
+      size += chunk.byteLength
+      if (size > MAX_BODY) throw new GateError(413, "size")
+      chunks.push(chunk)
+    }
+  }
+  return Buffer.concat(chunks).toString("utf8")
+}
 
 function readCookie(req: Request, name: string) {
   for (const part of (req.headers.get("cookie") ?? "").split(";")) {
@@ -54,6 +76,15 @@ export function createGate(config: GateConfig, fetcher: typeof fetch = fetch) {
   const graceMs = config.liveGraceMs ?? 120_000
   /** Token ids already used, until they expire. */
   const used = new Map<string, number>()
+  const spend =
+    config.spend ??
+    ((jti: string, expiresAt: number) => {
+      const now = Date.now()
+      for (const [id, exp] of used) if (exp < now) used.delete(id)
+      if (used.has(jti)) return false
+      used.set(jti, expiresAt)
+      return true
+    })
   const answers = new Map<string, { live: boolean; at: number; okAt: number }>()
 
   /** A redirect to auth.zyx.tw. The state cookie ties the answer to this browser. */
@@ -78,15 +109,9 @@ export function createGate(config: GateConfig, fetcher: typeof fetch = fetch) {
     if (req.method !== "POST") throw new GateError(405, "method")
     // auth.zyx.tw's page posts the form, so the browser names it as Origin.
     if (req.headers.get("origin") !== config.authOrigin) throw new GateError(403, "origin")
-    if (Number(req.headers.get("content-length") ?? MAX_TOKEN + 1) > MAX_TOKEN + 64) throw new GateError(413, "size")
     const state = readCookie(req, STATE_COOKIE)
     if (!state) throw new GateError(400, "no state")
-    let token: unknown
-    try {
-      token = (await req.formData()).get("token")
-    } catch {
-      throw new GateError(400, "form")
-    }
+    const token = new URLSearchParams(await readCapped(req)).get("token")
     if (typeof token !== "string" || token.length > MAX_TOKEN) throw new GateError(400, "token")
     let payload
     try {
@@ -102,11 +127,7 @@ export function createGate(config: GateConfig, fetcher: typeof fetch = fetch) {
       throw new GateError(403, "signature")
     }
     if (payload.nonce !== state) throw new GateError(403, "state")
-    const now = Date.now()
-    for (const [id, exp] of used) if (exp < now) used.delete(id)
-    const jti = String(payload.jti)
-    if (used.has(jti)) throw new GateError(403, "replay")
-    used.set(jti, (payload.exp as number) * 1000 + 10_000)
+    if (!spend(String(payload.jti), (payload.exp as number) * 1000 + 10_000)) throw new GateError(403, "replay")
     const { sid, auth_time, sexp } = payload as { sid: unknown; auth_time: unknown; sexp: unknown }
     if (typeof sid !== "string" || typeof auth_time !== "number" || typeof sexp !== "number") throw new GateError(403, "claims")
     return { sid, authTime: auth_time * 1000, expiresAt: sexp * 1000 }
