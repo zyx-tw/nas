@@ -3,8 +3,9 @@ import { lstat } from "node:fs/promises"
 import { join } from "node:path"
 import { createAuth } from "./auth"
 import type { Config } from "./config"
-import { openDb } from "./db"
+import { openDb, spendToken } from "./db"
 import { createFiles } from "./files"
+import { type Gate, createGate } from "./gate"
 import { HttpError, barePage, json } from "./http"
 import { log } from "./otel"
 import { cleanRel, within } from "./paths"
@@ -12,10 +13,13 @@ import { createShares } from "./shares"
 
 const APP_CSP = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 
-export function createApp(config: Config) {
+export function createApp(config: Config, testGate?: Gate) {
   for (const dir of [config.data, config.root, config.tmp]) mkdirSync(dir, { recursive: true })
   const db = openDb(join(config.data, "nas.db"))
-  const auth = createAuth(config, db)
+  const gate =
+    testGate ??
+    createGate({ authOrigin: config.authOrigin, app: "nas", origin: config.origin, publicKey: config.authKey, spend: (jti, expiresAt) => spendToken(db, jti, expiresAt) })
+  const auth = createAuth(config, db, gate)
   const files = createFiles(config, db)
   const shares = createShares(config, db)
   const nasHost = new URL(config.origin).host
@@ -55,11 +59,15 @@ export function createApp(config: Config) {
 
     if (host !== nasHost) throw new HttpError(421)
 
+    // Sign-in at auth.zyx.tw; the callback checks its own Origin (auth.zyx.tw).
+    if (url.pathname === "/auth/start" && req.method === "GET") return auth.start()
+    if (url.pathname === "/auth/callback") return auth.callback(req, ip)
+
     if (url.pathname.startsWith("/api/")) {
       // Cookies are SameSite=Strict; the Origin check covers older browsers and non-browser clients.
       if (req.method !== "GET" && req.method !== "HEAD" && req.headers.get("origin") !== config.origin) throw new HttpError(403)
-      if (url.pathname.startsWith("/api/auth/")) return auth.handle(req, url.pathname, ip)
-      if (!auth.session(req)) throw new HttpError(401)
+      if (url.pathname.startsWith("/api/auth/")) return auth.handle(req, url.pathname)
+      if (!(await auth.session(req))) throw new HttpError(401)
       if (url.pathname.startsWith("/api/files")) return files.handle(req, url)
       if (url.pathname.startsWith("/api/shares")) return shares.handleOwner(req, url)
       throw new HttpError(404)

@@ -16,7 +16,7 @@
 
 ## 功能
 
-- **用 passkey 登录**：Touch ID 或 Face ID，不用密码。
+- **用 passkey 登录**：在 auth.zyx.tw 登录，我的服务共用这个入口。Touch ID 或 Face ID，不用密码。
 - **管理文件**：上传、建文件夹、重命名、删除、下载。
 - **分享链接**：`s.zyx.tw/<id>` 在浏览器直接打开文件本身，文件夹则是一份纯列表。
 - **撤销链接**：撤销或过期的链接，和不存在的链接返回一样的 404。
@@ -27,10 +27,10 @@
 ```sh
 bun install
 bun run build
-NAS_SETUP_TOKEN=change-me bun run start
+bun run start
 ```
 
-打开 `http://localhost:8080/?setup=change-me`，注册一个 passkey。
+登录走 auth.zyx.tw，本机运行时要把 `NAS_AUTH_ORIGIN` 指向一台 auth 服务。
 
 ## 使用
 
@@ -43,9 +43,9 @@ NAS_SETUP_TOKEN=change-me bun run start
 
 | 变量 | 设置什么 | 默认 |
 |-----|------|---------|
-| `NAS_ORIGIN` | 所有者页面的 origin，也是 passkey 的 RP ID | `http://localhost:8080` |
+| `NAS_ORIGIN` | 所有者页面的 origin，也是 token 的 audience | `http://localhost:8080` |
 | `NAS_SHARE_ORIGIN` | 公开分享的 origin，必须是另一个主机名 | `http://127.0.0.1:8080` |
-| `NAS_SETUP_TOKEN` | 注册第一个 passkey 用的 token | 空 |
+| `NAS_AUTH_ORIGIN` | 登录入口 | `https://auth.zyx.tw` |
 | `NAS_DATA` | 文件、上传暂存与数据库的文件夹 | `./data` |
 | `NAS_DIST` | 构建好的网页 | `./dist` |
 | `NAS_PORT` | 监听端口 | `8080` |
@@ -60,4 +60,4 @@ flowchart LR
   C --> S[Bun server] --> D[(文件 + SQLite)]
 ```
 
-同一个 Bun 进程服务两个主机名，按 `Host` header 分流。登录 cookie 只属于所有者的主机名，所以分享出去的文件读不到它。SQLite 存 passkey、session 哈希与链接。
+同一个 Bun 进程服务两个主机名，按 `Host` header 分流。登录 cookie 只属于所有者的主机名，所以分享出去的文件读不到它。SQLite 存 session 哈希与链接，passkey 在 auth.zyx.tw。

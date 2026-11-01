@@ -1,4 +1,6 @@
 import { join, resolve } from "node:path"
+import type { JWK } from "jose"
+import authKey from "./auth-key.json"
 
 export type Config = {
   port: number
@@ -8,7 +10,10 @@ export type Config = {
   dist: string
   origin: string
   shareOrigin: string
-  setupToken: string
+  /** Where sign-in happens. */
+  authOrigin: string
+  /** auth.zyx.tw's public key, pinned in auth-key.json. */
+  authKey: JWK
 }
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
@@ -24,6 +29,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     dist: resolve(env.NAS_DIST ?? "./dist"),
     origin,
     shareOrigin,
-    setupToken: env.NAS_SETUP_TOKEN ?? "",
+    authOrigin: env.NAS_AUTH_ORIGIN ?? "https://auth.zyx.tw",
+    authKey: authKey as JWK,
   }
 }

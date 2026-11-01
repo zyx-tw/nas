@@ -3,8 +3,10 @@ import { createHash } from "node:crypto"
 import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { SignJWT, exportJWK, generateKeyPair } from "jose"
 import { createApp } from "./app"
 import { loadConfig } from "./config"
+import { createGate } from "./gate"
 import { limitKey, newShareId } from "./shares"
 
 const NAS = "http://nas.test"
@@ -12,6 +14,31 @@ const SHARE = "http://s.test"
 let dir: string
 let app: ReturnType<typeof createApp>
 let cookie: string
+const AUTH = "https://auth.test"
+const pair = await generateKeyPair("EdDSA", { crv: "Ed25519" })
+/** Auth session ids that auth.zyx.tw still holds. */
+const authLive = new Set<string>(["sid-test"])
+const authFetch = (async (input: string) => Response.json({ live: authLive.has(new URL(input).searchParams.get("sid") ?? "") })) as unknown as typeof fetch
+
+function authToken(state: string, audience = NAS) {
+  const now = Math.floor(Date.now() / 1000)
+  return new SignJWT({ sid: "sid-new", nonce: state, auth_time: now, sexp: now + 86_400 })
+    .setProtectedHeader({ alg: "EdDSA" })
+    .setIssuer(AUTH)
+    .setAudience(audience)
+    .setIssuedAt()
+    .setExpirationTime("60s")
+    .setJti(crypto.randomUUID())
+    .sign(pair.privateKey)
+}
+
+const callback = (token: string, state: string, from = AUTH) =>
+  req(NAS, "/auth/callback", {
+    method: "POST",
+    auth: false,
+    headers: { origin: from, cookie: `__Host-gate_state=${state}`, "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ token }).toString(),
+  })
 
 function req(origin: string, path: string, init: RequestInit & { auth?: boolean } = {}) {
   const headers = new Headers(init.headers)
@@ -28,14 +55,16 @@ const upload = (path: string, body: string, overwrite = false) =>
 const body = async (res: Response | Promise<Response>): Promise<any> => (await res).json()
 const share = async (path: string, days: number | null = 30) => (await body(post("/api/shares", { path, days }))).share
 
-beforeAll(() => {
+beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "nas-test-"))
   mkdirSync(join(dir, "dist/assets"), { recursive: true })
   writeFileSync(join(dir, "dist/index.html"), "<!doctype html><title>NAS</title>")
   writeFileSync(join(dir, "dist/assets/app.js"), "console.log(1)")
-  app = createApp(loadConfig({ NAS_DATA: join(dir, "data"), NAS_DIST: join(dir, "dist"), NAS_ORIGIN: NAS, NAS_SHARE_ORIGIN: SHARE, NAS_SETUP_TOKEN: "setup-secret" }))
+  const config = loadConfig({ NAS_DATA: join(dir, "data"), NAS_DIST: join(dir, "dist"), NAS_ORIGIN: NAS, NAS_SHARE_ORIGIN: SHARE, NAS_AUTH_ORIGIN: AUTH })
+  const gate = createGate({ authOrigin: AUTH, app: "nas", origin: NAS, publicKey: await exportJWK(pair.publicKey), liveCacheMs: 0 }, authFetch)
+  app = createApp(config, gate)
   const token = "test-session"
-  app.db.query("insert into sessions (token_hash, created_at, expires_at) values (?, ?, ?)").run(createHash("sha256").update(token).digest("hex"), Date.now(), Date.now() + 60_000)
+  app.db.query("insert into sessions (token_hash, sid, created_at, expires_at) values (?, ?, ?, ?)").run(createHash("sha256").update(token).digest("hex"), "sid-test", Date.now(), Date.now() + 60_000)
   cookie = `nas_session=${token}`
 })
 
@@ -55,19 +84,38 @@ describe("hosts and auth", () => {
     const res = await app.fetch(new Request(SHARE + "/api/files", { headers: { host: "s.test", cookie } }))
     expect(res.status).toBe(404)
   })
-  test("setup token gates the first passkey", async () => {
-    const me = await body(req(NAS, "/api/auth/me", { auth: false }))
-    expect(me).toEqual({ authenticated: false, setup: true })
-    const bad = await req(NAS, "/api/auth/register/options", { method: "POST", body: JSON.stringify({ token: "nope" }), auth: false })
-    expect(bad.status).toBe(403)
-    const good = await req(NAS, "/api/auth/register/options", { method: "POST", body: JSON.stringify({ token: "setup-secret" }), auth: false })
-    expect(good.status).toBe(200)
-    expect((await body(good)).rp.id).toBe("nas.test")
-    expect(good.headers.get("set-cookie")).toContain("nas_flow=")
+  test("a valid token from auth.zyx.tw makes a session", async () => {
+    const state = "s".repeat(32)
+    authLive.add("sid-new")
+    const res = await callback(await authToken(state), state)
+    expect(res.status).toBe(303)
+    const set = res.headers.getSetCookie().find(c => c.startsWith("nas_session="))!
+    const token = set.split(";")[0].split("=")[1]
+    const me = await app.fetch(new Request(NAS + "/api/auth/me", { headers: { host: "nas.test", cookie: `nas_session=${token}` } }))
+    expect(await me.json()).toEqual({ authenticated: true })
+    // Signing out at auth.zyx.tw ends it here.
+    authLive.delete("sid-new")
+    const after = await app.fetch(new Request(NAS + "/api/auth/me", { headers: { host: "nas.test", cookie: `nas_session=${token}` } }))
+    expect(await after.json()).toEqual({ authenticated: false })
+  })
+  test("the callback refuses a wrong state, origin, audience or a replay", async () => {
+    const state = "t".repeat(32)
+    authLive.add("sid-new")
+    expect((await callback(await authToken(state), "u".repeat(32))).status).toBe(403)
+    expect((await callback(await authToken(state), state, "http://evil.test")).status).toBe(403)
+    expect((await callback(await authToken(state, "https://ssh.zyx.tw"), state)).status).toBe(403)
+    const token = await authToken(state)
+    expect((await callback(token, state)).status).toBe(303)
+    expect((await callback(token, state)).status).toBe(403)
+  })
+  test("start sends the browser to auth.zyx.tw", async () => {
+    const res = await req(NAS, "/auth/start", { auth: false })
+    expect(res.status).toBe(302)
+    expect(res.headers.get("location")).toStartWith(`${AUTH}/authorize?app=nas&state=`)
   })
   test("an oversized json body is refused before it fills memory", async () => {
     const big = "x".repeat(65 * 1024)
-    const declared = await req(NAS, "/api/auth/login/verify", { method: "POST", body: big, auth: false })
+    const declared = await req(NAS, "/api/files/folder", { method: "POST", body: big })
     expect(declared.status).toBe(413)
     const stream = new ReadableStream({
       start(controller) {
@@ -75,12 +123,8 @@ describe("hosts and auth", () => {
         controller.close()
       },
     })
-    const chunked = await req(NAS, "/api/auth/register/options", { method: "POST", body: stream, auth: false })
+    const chunked = await req(NAS, "/api/files/folder", { method: "POST", body: stream })
     expect(chunked.status).toBe(413)
-  })
-  test("register verify without a flow fails", async () => {
-    const res = await req(NAS, "/api/auth/register/verify", { method: "POST", body: JSON.stringify({ token: "setup-secret", response: {} }), auth: false })
-    expect(res.status).toBe(400)
   })
 })
 
