@@ -1,14 +1,14 @@
 /*
  * What a Vite project adds around the ui.zyx.tw base: Tailwind itself, the
- * dark variant and fonts served from this project. zyx-theme.css holds the
+ * dark variant and the font variables. zyx-theme.css holds the
  * tokens and is generated; edit neither file to restyle a component.
  */
 @import "tailwindcss";
-@import "@fontsource-variable/noto-sans-tc";
 
 @custom-variant dark (&:is(.dark *));
 
-/* The base names its fonts by variable; next/font sets these in Next.js. */
+/* The base names its fonts by variable. Sarasa covers CJK, so the Noto slot
+ * falls back to system fonts instead of shipping 100 subsets. */
 :root {
-  --font-noto-sans-tc: "Noto Sans TC Variable";
+  --font-noto-sans-tc: "PingFang TC", "Noto Sans TC";
 }
