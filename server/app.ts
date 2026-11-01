@@ -11,7 +11,8 @@ import { log } from "./otel"
 import { cleanRel, within } from "./paths"
 import { createShares } from "./shares"
 
-const APP_CSP = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+// Sarasa Mono TC comes from ui.zyx.tw, the design system's font host.
+const APP_CSP = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://ui.zyx.tw; font-src 'self' https://ui.zyx.tw; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 
 export function createApp(config: Config, testGate?: Gate) {
   for (const dir of [config.data, config.root, config.tmp]) mkdirSync(dir, { recursive: true })

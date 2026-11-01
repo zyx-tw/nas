@@ -28,7 +28,7 @@ const AT: Record<At, string> = {
  * for both header and footer text, centered on the text line.
  */
 export const cornerLink =
-  "relative rounded-control text-muted-foreground outline-offset-4 transition-colors after:absolute after:-inset-x-2 after:top-1/2 after:h-6 after:-translate-y-1/2 hover:text-foreground focus-visible:outline-2 aria-[current=page]:text-foreground"
+  "relative uppercase text-muted-foreground outline-offset-4 transition-colors after:absolute after:-inset-x-2 after:top-1/2 after:h-6 after:-translate-y-1/2 hover:text-foreground focus-visible:outline-2 aria-[current=page]:text-foreground"
 
 /** The tips on Privacy and Terms, which www.zyx.tw's own links share. */
 export const LEGAL_TIPS = {
