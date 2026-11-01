@@ -83,7 +83,7 @@ export function createApp(config: Config, testGate?: Gate) {
       response = await route(req, ip)
     } catch (error) {
       if (error instanceof HttpError && req.headers.get("host") === shareHost) {
-        response = barePage("連結無效", error.status === 429 ? "請稍後再試" : "連結無效", error.status)
+        response = barePage("Invalid link", error.status === 429 ? "Try again later" : "Invalid link", error.status)
       } else if (error instanceof HttpError) {
         response = json({ error: error.message || String(error.status) }, { status: error.status })
       } else {

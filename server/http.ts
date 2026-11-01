@@ -77,7 +77,7 @@ export function escapeHtml(text: string) {
 const BARE_STYLE = "body{font:16px/1.6 system-ui,sans-serif;margin:16px}ul{list-style:none;padding:0;margin:0}a{color:inherit}"
 
 export function barePage(title: string, body: string, status = 200, style = BARE_STYLE) {
-  const html = `<!doctype html><html lang="zh-TW"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>${escapeHtml(title)}</title><style>${style}</style></head><body>${body}</body></html>`
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>${escapeHtml(title)}</title><style>${style}</style></head><body>${body}</body></html>`
   return new Response(html, {
     status,
     headers: {
