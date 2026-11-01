@@ -14,7 +14,7 @@ You keep your files on your own server and open them from any browser. You send 
 
 ## Features
 
-- **Sign in with a passkey**: Touch ID or Face ID, no password.
+- **Sign in with a passkey**: at auth.zyx.tw, shared by my services. Touch ID or Face ID, no password.
 - **Manage files**: upload, make folders, rename, delete and download.
 - **Share a link**: `s.zyx.tw/<id>` opens the file itself in the browser, or a plain folder list.
 - **Revoke a link**: a revoked or expired link gives the same 404 as an unknown one.
@@ -25,10 +25,10 @@ You keep your files on your own server and open them from any browser. You send 
 ```sh
 bun install
 bun run build
-NAS_SETUP_TOKEN=change-me bun run start
+bun run start
 ```
 
-Open `http://localhost:8080/?setup=change-me` and register a passkey.
+Sign-in goes through auth.zyx.tw, so a local run needs `NAS_AUTH_ORIGIN` pointed at an auth server.
 
 ## Usage
 
@@ -41,9 +41,9 @@ Open `http://localhost:8080/?setup=change-me` and register a passkey.
 
 | Key | Sets | Default |
 |-----|------|---------|
-| `NAS_ORIGIN` | the owner app origin, also the passkey RP ID | `http://localhost:8080` |
+| `NAS_ORIGIN` | the owner app origin, also the token audience | `http://localhost:8080` |
 | `NAS_SHARE_ORIGIN` | the public share origin, on a different host | `http://127.0.0.1:8080` |
-| `NAS_SETUP_TOKEN` | the token that registers the first passkey | empty |
+| `NAS_AUTH_ORIGIN` | where sign-in happens | `https://auth.zyx.tw` |
 | `NAS_DATA` | the folder for files, uploads in progress and the database | `./data` |
 | `NAS_DIST` | the built web app | `./dist` |
 | `NAS_PORT` | the listen port | `8080` |
@@ -58,20 +58,20 @@ flowchart LR
   C --> S[Bun server] --> D[(files + SQLite)]
 ```
 
-One Bun process serves both hosts and routes by the `Host` header. The session cookie belongs only to the owner host, so a shared file can never read it. SQLite holds the passkeys, the session hashes and the links.
+One Bun process serves both hosts and routes by the `Host` header. The session cookie belongs only to the owner host, so a shared file can never read it. SQLite holds the session hashes and the links. Passkeys live at auth.zyx.tw.
 
 ## For AI agents
 
 Facts for coding agents and LLM tools. The rules for changing the code are in [AGENTS.md](AGENTS.md).
 
-- **Summary**: A single-owner web drive with passkey login and public share links on a second host.
+- **Summary**: A single-owner web drive with sign-in through auth.zyx.tw and public share links on a second host.
 - **Type**: service
 - **Interfaces**: HTTP `https://nas.zyx.tw/api` (owner, session cookie), HTTP `https://s.zyx.tw/<id>` (public)
 - **Install**: `bun install`
 - **Run**: `bun run start`
 - **Verify**: `bun test server`
-- **Config**: `NAS_ORIGIN`, `NAS_SHARE_ORIGIN`, `NAS_SETUP_TOKEN`, `NAS_DATA`, `NAS_DIST`, `NAS_PORT`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_SERVICE_NAME`
-- **Secrets**: `NAS_SETUP_TOKEN` and the OTLP header live in `/etc/nas/env` on the server.
+- **Config**: `NAS_ORIGIN`, `NAS_SHARE_ORIGIN`, `NAS_AUTH_ORIGIN`, `NAS_DATA`, `NAS_DIST`, `NAS_PORT`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_SERVICE_NAME`
+- **Secrets**: the OTLP header lives in `/etc/nas/env` on the server.
 - **Limits**: One owner only. A move or rename made outside the app does not update links.
 
 ## Development
@@ -82,7 +82,7 @@ bun install
 bun test server && bun run typecheck && bun run lint
 ```
 
-`scripts/e2e.mjs` runs the full flow in Chromium with a virtual passkey. `scripts/deploy.sh` tests, builds and ships to the server.
+`scripts/deploy.sh` tests, builds and ships to the server.
 
 ## License
 

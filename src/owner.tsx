@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
-import { startAuthentication, startRegistration } from "@simplewebauthn/browser"
 import { Copy, File, Folder, FolderPlus, LogOut, MoreHorizontal, Upload, X } from "lucide-react"
 import { toast } from "sonner"
 import { TaskShell } from "@/components/task-shell"
@@ -15,7 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ApiError, api, formatDate, formatSize, joinPath, post, uploadFile, type Entry, type Share } from "@/lib/api"
 
-type Me = { authenticated: boolean; setup: boolean }
+type Me = { authenticated: boolean }
 
 function failMessage(error: unknown) {
   if (error instanceof ApiError && error.status === 409) return "已有同名項目"
@@ -42,38 +41,17 @@ function expiry(share: Share) {
 
 export function OwnerApp() {
   const [me, setMe] = useState<Me | null>(null)
-  const setupToken = new URLSearchParams(window.location.search).get("setup")
 
   useEffect(() => {
-    api<Me>("/api/auth/me").then(setMe, () => setMe({ authenticated: false, setup: false }))
+    api<Me>("/api/auth/me").then(setMe, () => setMe({ authenticated: false }))
   }, [])
 
-  async function login() {
-    try {
-      const optionsJSON = await post<Parameters<typeof startAuthentication>[0]["optionsJSON"]>("/api/auth/login/options", {})
-      const response = await startAuthentication({ optionsJSON })
-      await post("/api/auth/login/verify", { response })
-      setMe({ authenticated: true, setup: false })
-    } catch {
-      toast.error("登入失敗")
-    }
-  }
-
-  async function register() {
-    try {
-      const optionsJSON = await post<Parameters<typeof startRegistration>[0]["optionsJSON"]>("/api/auth/register/options", { token: setupToken })
-      const response = await startRegistration({ optionsJSON })
-      await post("/api/auth/register/verify", { token: setupToken, response })
-      window.history.replaceState(null, "", "/")
-      setMe({ authenticated: true, setup: false })
-    } catch {
-      toast.error("註冊失敗")
-    }
-  }
+  // Sign-in happens at auth.zyx.tw; it posts back to /auth/callback.
+  const login = () => window.location.assign("/auth/start")
 
   async function logout() {
     await post("/api/auth/logout", {}).catch(() => {})
-    setMe({ authenticated: false, setup: false })
+    setMe({ authenticated: false })
   }
 
   const actions = (
@@ -91,10 +69,10 @@ export function OwnerApp() {
     <TaskShell title="NAS" lang="zh-TW" actions={actions} wide>
       {me && !me.authenticated && (
         <section aria-label="登入" className="flex gap-3">
-          {me.setup && setupToken ? <Button onClick={register}>註冊</Button> : <Button onClick={login}>登入</Button>}
+          <Button onClick={login}>登入</Button>
         </section>
       )}
-      {me?.authenticated && <Workspace onSignedOut={() => setMe({ authenticated: false, setup: false })} />}
+      {me?.authenticated && <Workspace onSignedOut={() => setMe({ authenticated: false })} />}
     </TaskShell>
   )
 }

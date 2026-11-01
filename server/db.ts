@@ -9,27 +9,17 @@ export type Share = {
   downloads: number
 }
 
-export type Credential = {
-  id: string
-  public_key: Uint8Array
-  counter: number
-  transports: string | null
-  created_at: number
-}
-
 export function openDb(path: string) {
   const db = new Database(path, { create: true, strict: true })
   db.exec("PRAGMA journal_mode = WAL")
+  // Before auth.zyx.tw, this file held passkeys and sessions without an auth session id.
+  db.exec("drop table if exists credentials")
+  const columns = db.query("select name from pragma_table_info('sessions')").all() as { name: string }[]
+  if (columns.length && !columns.some(c => c.name === "sid")) db.exec("drop table sessions")
   db.exec(`
-    create table if not exists credentials (
-      id text primary key,
-      public_key blob not null,
-      counter integer not null,
-      transports text,
-      created_at integer not null
-    );
     create table if not exists sessions (
       token_hash text primary key,
+      sid text not null,
       created_at integer not null,
       expires_at integer not null
     );
