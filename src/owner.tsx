@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
-import { Copy, File, Folder, FolderPlus, LogOut, MoreHorizontal, Upload, X } from "lucide-react"
+import { Copy, File, Folder, FolderPlus, MoreHorizontal, Upload, X } from "lucide-react"
 import { toast } from "sonner"
+import { cornerLink } from "@/components/corners"
 import { TaskShell } from "@/components/task-shell"
-import { TaskThemeToggle } from "@/components/task-theme"
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -56,15 +56,11 @@ export function OwnerApp() {
     window.location.assign("https://auth.zyx.tw/")
   }
 
-  const actions = (
-    <>
-      <TaskThemeToggle />
-      {me?.authenticated && (
-        <Button type="button" variant="ghost" size="icon" className="-m-3" onClick={logout} aria-label="Sign out" title="Sign out">
-          <LogOut aria-hidden />
-        </Button>
-      )}
-    </>
+  // The top right corner is text, as every corner is. The d key switches light and dark.
+  const actions = me?.authenticated && (
+    <button type="button" onClick={logout} className={cornerLink}>
+      Sign out
+    </button>
   )
 
   return (
