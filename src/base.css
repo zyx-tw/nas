@@ -7,7 +7,7 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* The base names its fonts by variable. Sarasa covers CJK, so the Noto slot
+/* The base names its fonts by variable. Maple covers CJK, so the Noto slot
  * falls back to system fonts instead of shipping 100 subsets. */
 :root {
   --font-noto-sans-tc: "PingFang TC", "Noto Sans TC";
