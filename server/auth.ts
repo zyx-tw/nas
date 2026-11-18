@@ -29,10 +29,20 @@ export function createAuth(config: Config, db: Db, gate: Gate) {
   // __Host- keeps the cookie to this host: a sibling under the same site cannot set or shadow it.
   // Browsers take the prefix only with Secure, so plain http (local runs) keeps the bare name.
   const SESSION_COOKIE = secure ? "__Host-nas_session" : "nas_session"
+  // The name before the prefix. On https the server ignores it, but old browsers still hold it and a rollback would honour it.
+  const LEGACY_COOKIE = "nas_session"
   const limiter = createLimiter(60)
 
   const cookie = (name: string, value: string, maxAge: number) =>
     `${name}=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${secure ? "; Secure" : ""}`
+
+  /** Ends the pre-prefix session on https: drops its row and returns the header that clears it, or none on http where it is the live name. */
+  function retireLegacy(req: Request) {
+    if (!secure) return []
+    const token = cookies(req).get(LEGACY_COOKIE)
+    if (token) db.query("delete from sessions where token_hash = ?").run(sha256(token))
+    return [cookie(LEGACY_COOKIE, "", 0)]
+  }
 
   /** True when the request has a live session here and auth.zyx.tw still holds the one behind it. */
   async function session(req: Request) {
@@ -69,6 +79,7 @@ export function createAuth(config: Config, db: Db, gate: Gate) {
     const headers = new Headers({ location: "/", "cache-control": "no-store" })
     headers.append("set-cookie", cookie(SESSION_COOKIE, token, Math.floor((expires - now) / 1000)))
     headers.append("set-cookie", gate.clearState)
+    for (const legacy of retireLegacy(req)) headers.append("set-cookie", legacy)
     return new Response(null, { status: 303, headers })
   }
 
@@ -78,7 +89,9 @@ export function createAuth(config: Config, db: Db, gate: Gate) {
     if (path === "/api/auth/logout" && req.method === "POST") {
       const token = cookies(req).get(SESSION_COOKIE)
       if (token) db.query("delete from sessions where token_hash = ?").run(sha256(token))
-      return json({ ok: true }, { headers: { "set-cookie": cookie(SESSION_COOKIE, "", 0) } })
+      const headers = new Headers({ "set-cookie": cookie(SESSION_COOKIE, "", 0) })
+      for (const legacy of retireLegacy(req)) headers.append("set-cookie", legacy)
+      return json({ ok: true }, { headers })
     }
     throw new HttpError(404)
   }
