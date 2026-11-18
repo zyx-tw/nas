@@ -170,7 +170,14 @@ describe("session cookie on https", () => {
   })
   // Fixed values shaped like randomBytes(32).toString("base64url"): 43 chars with upper case, digits, "-" and "_".
   const REAL = "Zk3-_Qw9Xb2LmN4pR7sT1uVwXyAaBcD5eFgH8iJ6kLM"
-  const PLANTED = "_-0aB9zY8xW7vU6tS5rQ4pO3nM2lK1jIhGfEdCbA_-q"
+  const PLANTED = "_-0aB9zY8xW7vU6tS5rQ4pO3nM2lK1jIhGfEdCbA_-o"
+  test("the legacy fixtures are canonical 32-byte base64url values", () => {
+    for (const t of [REAL, PLANTED]) {
+      const bytes = Buffer.from(t, "base64url")
+      expect(bytes).toHaveLength(32)
+      expect(bytes.toString("base64url")).toBe(t)
+    }
+  })
   test("the callback revokes every legacy value and the new session still works", async () => {
     const hash = (t: string) => createHash("sha256").update(t).digest("hex")
     const count = (t: string) => (secureApp.db.query("select count(*) as n from sessions where token_hash = ?").get(hash(t)) as { n: number }).n
