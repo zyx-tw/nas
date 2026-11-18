@@ -181,9 +181,11 @@ describe("session cookie on https", () => {
   test("the callback revokes every legacy value and the new session still works", async () => {
     const hash = (t: string) => createHash("sha256").update(t).digest("hex")
     const count = (t: string) => (secureApp.db.query("select count(*) as n from sessions where token_hash = ?").get(hash(t)) as { n: number }).n
+    const BYSTANDER = "B".repeat(43)
     const state = "c".repeat(32)
     authLive.add("sid-new")
-    for (const t of [REAL, PLANTED])
+    // A session with the same sid whose token the request does not carry must survive.
+    for (const t of [REAL, PLANTED, BYSTANDER])
       secureApp.db.query("insert into sessions (token_hash, sid, created_at, expires_at) values (?, ?, ?, ?)").run(hash(t), "sid-test", Date.now(), Date.now() + 60_000)
     // Spy on the db: count the token-hash deletes this request runs.
     const query = secureApp.db.query.bind(secureApp.db)
@@ -208,14 +210,18 @@ describe("session cookie on https", () => {
     expect(deletes).toHaveLength(2)
     expect(count(REAL)).toBe(0)
     expect(count(PLANTED)).toBe(0)
+    expect(count(BYSTANDER)).toBe(1)
+    secureApp.db.query("delete from sessions where token_hash = ?").run(hash(BYSTANDER))
     const token = res.headers.getSetCookie().find(c => c.startsWith("__Host-nas_session="))!.split(";")[0].split("=")[1]
     expect((await me(`__Host-nas_session=${token}`)).authenticated).toBe(true)
   })
   test("sign-out revokes every legacy value, in either cookie order", async () => {
     const hash = (t: string) => createHash("sha256").update(t).digest("hex")
     const count = (t: string) => (secureApp.db.query("select count(*) as n from sessions where token_hash = ?").get(hash(t)) as { n: number }).n
+    const BYSTANDER = "B".repeat(43)
     for (const order of [[REAL, PLANTED], [PLANTED, REAL]]) {
-      for (const t of order)
+      // A session with the same sid whose token the request does not carry must survive.
+      for (const t of [...order, BYSTANDER])
         secureApp.db.query("insert into sessions (token_hash, sid, created_at, expires_at) values (?, ?, ?, ?)").run(hash(t), "sid-test", Date.now(), Date.now() + 60_000)
       const res = await secureApp.fetch(
         new Request(HTTPS + "/api/auth/logout", { method: "POST", headers: { host: "nas.secure.test", origin: HTTPS, cookie: order.map(t => `nas_session=${t}`).join("; ") } }),
@@ -223,6 +229,8 @@ describe("session cookie on https", () => {
       )
       expect(res.status).toBe(200)
       for (const t of order) expect(count(t)).toBe(0)
+      expect(count(BYSTANDER)).toBe(1)
+      secureApp.db.query("delete from sessions where token_hash = ?").run(hash(BYSTANDER))
     }
   })
   test("sign-out clears the cookie, and the app learns the auth origin to finish at", async () => {
