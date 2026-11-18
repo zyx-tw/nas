@@ -92,11 +92,11 @@ describe("hosts and auth", () => {
     const set = res.headers.getSetCookie().find(c => c.startsWith("nas_session="))!
     const token = set.split(";")[0].split("=")[1]
     const me = await app.fetch(new Request(NAS + "/api/auth/me", { headers: { host: "nas.test", cookie: `nas_session=${token}` } }))
-    expect(await me.json()).toEqual({ authenticated: true })
+    expect(await me.json()).toEqual({ authenticated: true, signOut: `${AUTH}/` })
     // Signing out at auth.zyx.tw ends it here.
     authLive.delete("sid-new")
     const after = await app.fetch(new Request(NAS + "/api/auth/me", { headers: { host: "nas.test", cookie: `nas_session=${token}` } }))
-    expect(await after.json()).toEqual({ authenticated: false })
+    expect(await after.json()).toEqual({ authenticated: false, signOut: `${AUTH}/` })
   })
   test("the callback refuses a wrong state, origin, audience or a replay", async () => {
     const state = "t".repeat(32)
@@ -125,6 +125,51 @@ describe("hosts and auth", () => {
     })
     const chunked = await req(NAS, "/api/files/folder", { method: "POST", body: stream })
     expect(chunked.status).toBe(413)
+  })
+})
+
+describe("session cookie on https", () => {
+  // A sibling host under the same site (any *.zyx.tw) can set a cookie for the parent domain.
+  // Only a __Host- cookie is safe from that: the browser keeps it to this host, Secure and Path=/.
+  const HTTPS = "https://nas.secure.test"
+  let secureApp: ReturnType<typeof createApp>
+  beforeAll(async () => {
+    const config = loadConfig({ NAS_DATA: join(dir, "data-https"), NAS_DIST: join(dir, "dist"), NAS_ORIGIN: HTTPS, NAS_SHARE_ORIGIN: "https://s.secure.test", NAS_AUTH_ORIGIN: AUTH })
+    const gate = createGate({ authOrigin: AUTH, app: "nas", origin: HTTPS, publicKey: await exportJWK(pair.publicKey), liveCacheMs: 0 }, authFetch)
+    secureApp = createApp(config, gate)
+  })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const me = async (cookie: string): Promise<any> =>
+    (await secureApp.fetch(new Request(HTTPS + "/api/auth/me", { headers: { host: "nas.secure.test", cookie } }), "1.1.1.1")).json()
+
+  test("the session cookie has the __Host- prefix and a planted plain one is ignored", async () => {
+    const state = "h".repeat(32)
+    authLive.add("sid-new")
+    const res = await secureApp.fetch(
+      new Request(HTTPS + "/auth/callback", {
+        method: "POST",
+        headers: { host: "nas.secure.test", origin: AUTH, cookie: `__Host-gate_state=${state}`, "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ token: await authToken(state, HTTPS) }).toString(),
+      }),
+      "1.1.1.1",
+    )
+    expect(res.status).toBe(303)
+    const set = res.headers.getSetCookie().find(c => c.includes("nas_session="))!
+    expect(set).toStartWith("__Host-nas_session=")
+    expect(set).toContain("; Secure")
+    expect(set).toContain("; Path=/;")
+    expect(set.toLowerCase()).not.toContain("domain=")
+    const token = set.split(";")[0].split("=")[1]
+    expect((await me(`__Host-nas_session=${token}`)).authenticated).toBe(true)
+    expect((await me(`nas_session=${token}`)).authenticated).toBe(false)
+  })
+  test("sign-out clears the cookie, and the app learns the auth origin to finish at", async () => {
+    expect((await me("")).signOut).toBe(`${AUTH}/`)
+    const res = await secureApp.fetch(
+      new Request(HTTPS + "/api/auth/logout", { method: "POST", headers: { host: "nas.secure.test", origin: HTTPS } }),
+      "1.1.1.1",
+    )
+    expect(res.headers.getSetCookie()[0]).toStartWith("__Host-nas_session=;")
   })
 })
 

@@ -6,7 +6,6 @@ import { HttpError, json } from "./http"
 import { log } from "./otel"
 import { createLimiter } from "./shares"
 
-const SESSION_COOKIE = "nas_session"
 const SESSION_DAYS = 30
 
 const sha256 = (value: string) => createHash("sha256").update(value).digest("hex")
@@ -27,6 +26,9 @@ export function cookies(req: Request) {
  */
 export function createAuth(config: Config, db: Db, gate: Gate) {
   const secure = config.origin.startsWith("https:")
+  // __Host- keeps the cookie to this host: a sibling under the same site cannot set or shadow it.
+  // Browsers take the prefix only with Secure, so plain http (local runs) keeps the bare name.
+  const SESSION_COOKIE = secure ? "__Host-nas_session" : "nas_session"
   const limiter = createLimiter(60)
 
   const cookie = (name: string, value: string, maxAge: number) =>
@@ -71,7 +73,8 @@ export function createAuth(config: Config, db: Db, gate: Gate) {
   }
 
   async function handle(req: Request, path: string): Promise<Response> {
-    if (path === "/api/auth/me" && req.method === "GET") return json({ authenticated: await session(req) })
+    // signOut: where the app finishes a sign-out, so it works even when the logout call fails.
+    if (path === "/api/auth/me" && req.method === "GET") return json({ authenticated: await session(req), signOut: `${config.authOrigin}/` })
     if (path === "/api/auth/logout" && req.method === "POST") {
       const token = cookies(req).get(SESSION_COOKIE)
       if (token) db.query("delete from sessions where token_hash = ?").run(sha256(token))

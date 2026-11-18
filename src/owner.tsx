@@ -14,7 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ApiError, api, formatDate, formatSize, joinPath, post, uploadFile, type Entry, type Share } from "@/lib/api"
 
-type Me = { authenticated: boolean }
+type Me = { authenticated: boolean; signOut: string }
 
 function failMessage(error: unknown) {
   if (error instanceof ApiError && error.status === 409) return "Name already taken"
@@ -43,7 +43,7 @@ export function OwnerApp() {
   const [me, setMe] = useState<Me | null>(null)
 
   useEffect(() => {
-    api<Me>("/api/auth/me").then(setMe, () => setMe({ authenticated: false }))
+    api<Me>("/api/auth/me").then(setMe, () => setMe({ authenticated: false, signOut: "/" }))
   }, [])
 
   // Sign-in happens at auth.zyx.tw; it posts back to /auth/callback.
@@ -53,7 +53,7 @@ export function OwnerApp() {
   // so finish at auth.zyx.tw, where "Sign out" ends every service in this browser.
   async function logout() {
     await post("/api/auth/logout", {}).catch(() => {})
-    window.location.assign("https://auth.zyx.tw/")
+    window.location.assign(me!.signOut)
   }
 
   // The top right corner is text, as every corner is. The d key switches light and dark.
@@ -70,7 +70,7 @@ export function OwnerApp() {
           <Button onClick={login}>Sign in</Button>
         </section>
       )}
-      {me?.authenticated && <Workspace onSignedOut={() => setMe({ authenticated: false })} />}
+      {me?.authenticated && <Workspace onSignedOut={() => setMe({ authenticated: false, signOut: "/" })} />}
     </TaskShell>
   )
 }
