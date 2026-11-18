@@ -165,11 +165,24 @@ describe("session cookie on https", () => {
   })
   test("sign-out clears the cookie, and the app learns the auth origin to finish at", async () => {
     expect((await me("")).signOut).toBe(`${AUTH}/`)
+    const token = "live-secure-session"
+    const legacy = "legacy-session"
+    for (const t of [token, legacy])
+      secureApp.db.query("insert into sessions (token_hash, sid, created_at, expires_at) values (?, ?, ?, ?)").run(createHash("sha256").update(t).digest("hex"), "sid-test", Date.now(), Date.now() + 60_000)
+    authLive.add("sid-test")
+    expect((await me(`__Host-nas_session=${token}`)).authenticated).toBe(true)
     const res = await secureApp.fetch(
-      new Request(HTTPS + "/api/auth/logout", { method: "POST", headers: { host: "nas.secure.test", origin: HTTPS } }),
+      new Request(HTTPS + "/api/auth/logout", { method: "POST", headers: { host: "nas.secure.test", origin: HTTPS, cookie: `__Host-nas_session=${token}; nas_session=${legacy}` } }),
       "1.1.1.1",
     )
-    expect(res.headers.getSetCookie()[0]).toStartWith("__Host-nas_session=;")
+    const set = res.headers.getSetCookie()
+    const host = set.find(c => c.startsWith("__Host-nas_session=;"))!
+    for (const part of ["Max-Age=0", "Secure", "Path=/;"]) expect(host).toContain(part)
+    const old = set.find(c => c.startsWith("nas_session=;"))!
+    for (const part of ["Max-Age=0", "Secure", "Path=/;"]) expect(old).toContain(part)
+    expect((await me(`__Host-nas_session=${token}`)).authenticated).toBe(false)
+    // A rollback to the old name must not bring the legacy session back.
+    expect(secureApp.db.query("select count(*) as n from sessions where token_hash = ?").get(createHash("sha256").update(legacy).digest("hex"))).toEqual({ n: 0 })
   })
 })
 
