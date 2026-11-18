@@ -168,8 +168,16 @@ describe("session cookie on https", () => {
     expect(old.toLowerCase()).not.toContain("domain=")
     expect(set2.some(c => c.startsWith("__Host-gate_state=;") && c.includes("Max-Age=0"))).toBe(true)
   })
-  const REAL = "r".repeat(43)
-  const PLANTED = "p".repeat(43)
+  // Fixed values shaped like randomBytes(32).toString("base64url"): 43 chars with upper case, digits, "-" and "_".
+  const REAL = "Zk3-_Qw9Xb2LmN4pR7sT1uVwXyAaBcD5eFgH8iJ6kLM"
+  const PLANTED = "_-0aB9zY8xW7vU6tS5rQ4pO3nM2lK1jIhGfEdCbA_-o"
+  test("the legacy fixtures are canonical 32-byte base64url values", () => {
+    for (const t of [REAL, PLANTED]) {
+      const bytes = Buffer.from(t, "base64url")
+      expect(bytes).toHaveLength(32)
+      expect(bytes.toString("base64url")).toBe(t)
+    }
+  })
   test("the callback revokes every legacy value and the new session still works", async () => {
     const hash = (t: string) => createHash("sha256").update(t).digest("hex")
     const count = (t: string) => (secureApp.db.query("select count(*) as n from sessions where token_hash = ?").get(hash(t)) as { n: number }).n
@@ -177,6 +185,14 @@ describe("session cookie on https", () => {
     authLive.add("sid-new")
     for (const t of [REAL, PLANTED])
       secureApp.db.query("insert into sessions (token_hash, sid, created_at, expires_at) values (?, ?, ?, ?)").run(hash(t), "sid-test", Date.now(), Date.now() + 60_000)
+    // Spy on the db: count the token-hash deletes this request runs.
+    const query = secureApp.db.query.bind(secureApp.db)
+    const deletes: string[] = []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(secureApp.db as any).query = (sql: string) => {
+      if (sql.includes("delete from sessions where token_hash")) deletes.push(sql)
+      return query(sql)
+    }
     const res = await secureApp.fetch(
       new Request(HTTPS + "/auth/callback", {
         method: "POST",
@@ -185,7 +201,11 @@ describe("session cookie on https", () => {
       }),
       "1.1.1.1",
     )
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    delete (secureApp.db as any).query
     expect(res.status).toBe(303)
+    // Two distinct well-formed values: the duplicate, empty and malformed ones cost no delete.
+    expect(deletes).toHaveLength(2)
     expect(count(REAL)).toBe(0)
     expect(count(PLANTED)).toBe(0)
     const token = res.headers.getSetCookie().find(c => c.startsWith("__Host-nas_session="))!.split(";")[0].split("=")[1]
