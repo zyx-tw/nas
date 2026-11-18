@@ -19,6 +19,16 @@ export function cookies(req: Request) {
   return out
 }
 
+/** Every value the request carries for one cookie name, in order: `cookies()` keeps only the last. */
+function cookieValues(req: Request, name: string) {
+  const out: string[] = []
+  for (const part of (req.headers.get("cookie") ?? "").split(";")) {
+    const at = part.indexOf("=")
+    if (at > 0 && part.slice(0, at).trim() === name) out.push(part.slice(at + 1).trim())
+  }
+  return out
+}
+
 /**
  * Sessions on nas.zyx.tw. Sign-in happens at auth.zyx.tw: `start` sends the
  * browser there, `callback` takes the signed token back and makes a session
@@ -36,11 +46,10 @@ export function createAuth(config: Config, db: Db, gate: Gate) {
   const cookie = (name: string, value: string, maxAge: number) =>
     `${name}=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${secure ? "; Secure" : ""}`
 
-  /** Ends the pre-prefix session on https: drops its row and returns the header that clears it, or none on http where it is the live name. */
+  /** Ends the pre-prefix session on https: drops the row of every value sent and returns the header that clears it, or none on http where it is the live name. */
   function retireLegacy(req: Request) {
     if (!secure) return []
-    const token = cookies(req).get(LEGACY_COOKIE)
-    if (token) db.query("delete from sessions where token_hash = ?").run(sha256(token))
+    for (const token of cookieValues(req, LEGACY_COOKIE)) db.query("delete from sessions where token_hash = ?").run(sha256(token))
     return [cookie(LEGACY_COOKIE, "", 0)]
   }
 
