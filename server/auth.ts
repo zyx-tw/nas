@@ -8,6 +8,8 @@ import { createLimiter } from "./shares"
 
 const SESSION_DAYS = 30
 
+const ISSUED_TOKEN = /^[A-Za-z0-9_-]{43}$/
+
 const sha256 = (value: string) => createHash("sha256").update(value).digest("hex")
 
 export function cookies(req: Request) {
@@ -49,7 +51,8 @@ export function createAuth(config: Config, db: Db, gate: Gate) {
   /** Ends the pre-prefix session on https: drops the row of every value sent and returns the header that clears it, or none on http where it is the live name. */
   function retireLegacy(req: Request) {
     if (!secure) return []
-    for (const token of cookieValues(req, LEGACY_COOKIE)) db.query("delete from sessions where token_hash = ?").run(sha256(token))
+    // Only the issued shape (32 random bytes, base64url) can match a row, and a repeated value needs one delete only.
+    for (const token of new Set(cookieValues(req, LEGACY_COOKIE))) if (ISSUED_TOKEN.test(token)) db.query("delete from sessions where token_hash = ?").run(sha256(token))
     return [cookie(LEGACY_COOKIE, "", 0)]
   }
 

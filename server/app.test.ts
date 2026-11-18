@@ -168,10 +168,33 @@ describe("session cookie on https", () => {
     expect(old.toLowerCase()).not.toContain("domain=")
     expect(set2.some(c => c.startsWith("__Host-gate_state=;") && c.includes("Max-Age=0"))).toBe(true)
   })
+  const REAL = "r".repeat(43)
+  const PLANTED = "p".repeat(43)
+  test("the callback revokes every legacy value and the new session still works", async () => {
+    const hash = (t: string) => createHash("sha256").update(t).digest("hex")
+    const count = (t: string) => (secureApp.db.query("select count(*) as n from sessions where token_hash = ?").get(hash(t)) as { n: number }).n
+    const state = "c".repeat(32)
+    authLive.add("sid-new")
+    for (const t of [REAL, PLANTED])
+      secureApp.db.query("insert into sessions (token_hash, sid, created_at, expires_at) values (?, ?, ?, ?)").run(hash(t), "sid-test", Date.now(), Date.now() + 60_000)
+    const res = await secureApp.fetch(
+      new Request(HTTPS + "/auth/callback", {
+        method: "POST",
+        headers: { host: "nas.secure.test", origin: AUTH, cookie: `__Host-gate_state=${state}; nas_session=${REAL}; nas_session=${PLANTED}; nas_session=${REAL}; nas_session=; nas_session=bad`, "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ token: await authToken(state, HTTPS) }).toString(),
+      }),
+      "1.1.1.1",
+    )
+    expect(res.status).toBe(303)
+    expect(count(REAL)).toBe(0)
+    expect(count(PLANTED)).toBe(0)
+    const token = res.headers.getSetCookie().find(c => c.startsWith("__Host-nas_session="))!.split(";")[0].split("=")[1]
+    expect((await me(`__Host-nas_session=${token}`)).authenticated).toBe(true)
+  })
   test("sign-out revokes every legacy value, in either cookie order", async () => {
     const hash = (t: string) => createHash("sha256").update(t).digest("hex")
     const count = (t: string) => (secureApp.db.query("select count(*) as n from sessions where token_hash = ?").get(hash(t)) as { n: number }).n
-    for (const order of [["real-legacy", "planted"], ["planted", "real-legacy"]]) {
+    for (const order of [[REAL, PLANTED], [PLANTED, REAL]]) {
       for (const t of order)
         secureApp.db.query("insert into sessions (token_hash, sid, created_at, expires_at) values (?, ?, ?, ?)").run(hash(t), "sid-test", Date.now(), Date.now() + 60_000)
       const res = await secureApp.fetch(
@@ -185,7 +208,7 @@ describe("session cookie on https", () => {
   test("sign-out clears the cookie, and the app learns the auth origin to finish at", async () => {
     expect((await me("")).signOut).toBe(`${AUTH}/`)
     const token = "live-secure-session"
-    const legacy = "legacy-session"
+    const legacy = "L".repeat(43)
     for (const t of [token, legacy])
       secureApp.db.query("insert into sessions (token_hash, sid, created_at, expires_at) values (?, ?, ?, ?)").run(createHash("sha256").update(t).digest("hex"), "sid-test", Date.now(), Date.now() + 60_000)
     authLive.add("sid-test")
