@@ -162,6 +162,25 @@ describe("session cookie on https", () => {
     const token = set.split(";")[0].split("=")[1]
     expect((await me(`__Host-nas_session=${token}`)).authenticated).toBe(true)
     expect((await me(`nas_session=${token}`)).authenticated).toBe(false)
+    const set2 = res.headers.getSetCookie()
+    const old = set2.find(c => c.startsWith("nas_session=;"))!
+    expect(old).toBe("nas_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0; Secure")
+    expect(old.toLowerCase()).not.toContain("domain=")
+    expect(set2.some(c => c.startsWith("__Host-gate_state=;") && c.includes("Max-Age=0"))).toBe(true)
+  })
+  test("sign-out revokes every legacy value, in either cookie order", async () => {
+    const hash = (t: string) => createHash("sha256").update(t).digest("hex")
+    const count = (t: string) => (secureApp.db.query("select count(*) as n from sessions where token_hash = ?").get(hash(t)) as { n: number }).n
+    for (const order of [["real-legacy", "planted"], ["planted", "real-legacy"]]) {
+      for (const t of order)
+        secureApp.db.query("insert into sessions (token_hash, sid, created_at, expires_at) values (?, ?, ?, ?)").run(hash(t), "sid-test", Date.now(), Date.now() + 60_000)
+      const res = await secureApp.fetch(
+        new Request(HTTPS + "/api/auth/logout", { method: "POST", headers: { host: "nas.secure.test", origin: HTTPS, cookie: order.map(t => `nas_session=${t}`).join("; ") } }),
+        "1.1.1.1",
+      )
+      expect(res.status).toBe(200)
+      for (const t of order) expect(count(t)).toBe(0)
+    }
   })
   test("sign-out clears the cookie, and the app learns the auth origin to finish at", async () => {
     expect((await me("")).signOut).toBe(`${AUTH}/`)
