@@ -4,12 +4,16 @@ import { join } from "node:path"
 import { downloadZip } from "client-zip"
 import type { Config } from "./config"
 import type { Db, Share } from "./db"
-import { HttpError, PUBLIC_HEADERS, barePage, contentDisposition, escapeHtml, fileResponse, formatSize, json, listPage, readJson } from "./http"
+import { HttpError, PUBLIC_HEADERS, barePage, contentDisposition, escapeHtml, fileResponse, formatSize, json, listPage, readJson, type ListRow } from "./http"
 import { listFolder } from "./files"
 import { cleanRel, resolveExisting } from "./paths"
 import { log } from "./otel"
 
 const ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+const THUMB_TYPE = /^image\/(png|jpeg|webp|gif|avif|heic)$/
+const THUMB_MAX_BYTES = 40 * 1024 * 1024
+const THUMB_FALLBACK_BYTES = 2 * 1024 * 1024
+
 export const ID_PATTERN = /^[0-9A-Za-z]{22}$/
 
 // 128 random bits as 22 base62 characters.
@@ -134,7 +138,7 @@ export function createShares(config: Config, db: Db) {
 
   // Public side, on the share host. Returns null when the path is not a share route.
   async function handlePublic(req: Request, url: URL, ip: string): Promise<Response | null> {
-    const match = /^\/([^/]+?)(\/raw|\/zip)?$/.exec(url.pathname)
+    const match = /^\/([^/]+?)(\/raw|\/zip|\/thumb)?$/.exec(url.pathname)
     // Only well-formed ids count as attempts; /favicon.ico and the like are a plain 404.
     if (!match || !ID_PATTERN.test(match[1])) return null
     const [, id, suffix] = match
@@ -144,6 +148,17 @@ export function createShares(config: Config, db: Db) {
       throw new HttpError(429)
     }
     const found = await resolve(id, url.searchParams.get("path"), ip)
+
+    // A small webp of an image, for the folder list. Other files have none.
+    if (suffix === "/thumb") {
+      const mime = Bun.file(found.path).type.split(";")[0]
+      if (!found.stat.isFile() || found.stat.size > THUMB_MAX_BYTES || !THUMB_TYPE.test(mime)) throw new HttpError(404)
+      const source = await Bun.file(found.path).bytes()
+      const thumb = await new Bun.Image(source).resize(240, 240, { fit: "inside" }).webp({ quality: 80 }).bytes().catch(() => null)
+      // A file the decoder rejects, such as a truncated JPEG, still shows in a browser: send a small one as it is.
+      if (!thumb && source.length > THUMB_FALLBACK_BYTES) throw new HttpError(404)
+      return new Response(thumb ?? source, { headers: { ...PUBLIC_HEADERS, "content-type": thumb ? "image/webp" : mime, "x-content-type-options": "nosniff", "cache-control": "private, max-age=300" } })
+    }
 
     // Video, audio and images fill the window in a bare player page.
     const mime = Bun.file(found.path).type.split(";")[0]
@@ -178,13 +193,22 @@ export function createShares(config: Config, db: Db) {
     if (suffix !== "/zip") {
       const entries = await listFolder(found.path)
       const href = (rel: string) => (rel ? `?path=${encodeURIComponent(rel)}` : `/${id}`)
-      const rows = [
-        ...(found.rel ? [{ href: href(found.rel.split("/").slice(0, -1).join("/")), name: "..", note: "" }] : []),
-        ...entries.map(entry => ({
-          href: href([found.rel, entry.name].filter(Boolean).join("/")),
-          name: entry.name + (entry.type === "folder" ? "/" : ""),
-          note: entry.type === "folder" ? "" : formatSize(entry.size),
-        })),
+      const sub = (rel: string) => encodeURIComponent(rel)
+      const rows: ListRow[] = [
+        ...(found.rel ? [{ href: href(found.rel.split("/").slice(0, -1).join("/")), name: "..", note: "", label: "<" }] : []),
+        ...entries.map(entry => {
+          const rel = [found.rel, entry.name].filter(Boolean).join("/")
+          if (entry.type === "folder") return { href: href(rel), name: entry.name + "/", note: "", label: "/" }
+          const image = THUMB_TYPE.test(Bun.file(entry.name).type.split(";")[0]) && entry.size <= THUMB_MAX_BYTES
+          return {
+            href: href(rel),
+            name: entry.name,
+            note: formatSize(entry.size),
+            label: (entry.name.split(".").pop() ?? "").slice(0, 4).toUpperCase(),
+            thumb: image ? `/${id}/thumb?path=${sub(rel)}` : undefined,
+            download: `/${id}?path=${sub(rel)}&dl=1`,
+          }
+        }),
       ]
       return listPage(found.name, rows, `/${id}/zip${found.rel ? `?path=${encodeURIComponent(found.rel)}` : ""}`)
     }
