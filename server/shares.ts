@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { downloadZip } from "client-zip"
 import type { Config } from "./config"
 import type { Db, Share } from "./db"
-import { HttpError, PUBLIC_HEADERS, barePage, contentDisposition, escapeHtml, fileResponse, json, readJson } from "./http"
+import { HttpError, PUBLIC_HEADERS, barePage, contentDisposition, escapeHtml, fileResponse, formatSize, json, listPage, readJson } from "./http"
 import { listFolder } from "./files"
 import { cleanRel, resolveExisting } from "./paths"
 import { log } from "./otel"
@@ -178,14 +178,15 @@ export function createShares(config: Config, db: Db) {
     if (suffix !== "/zip") {
       const entries = await listFolder(found.path)
       const href = (rel: string) => (rel ? `?path=${encodeURIComponent(rel)}` : `/${id}`)
-      const items = [
-        ...(found.rel ? [`<li><a href="${escapeHtml(href(found.rel.split("/").slice(0, -1).join("/")))}">..</a></li>`] : []),
-        ...entries.map(entry => {
-          const rel = [found.rel, entry.name].filter(Boolean).join("/")
-          return `<li><a href="${escapeHtml(href(rel))}">${escapeHtml(entry.name)}${entry.type === "folder" ? "/" : ""}</a></li>`
-        }),
+      const rows = [
+        ...(found.rel ? [{ href: href(found.rel.split("/").slice(0, -1).join("/")), name: "..", note: "" }] : []),
+        ...entries.map(entry => ({
+          href: href([found.rel, entry.name].filter(Boolean).join("/")),
+          name: entry.name + (entry.type === "folder" ? "/" : ""),
+          note: entry.type === "folder" ? "" : formatSize(entry.size),
+        })),
       ]
-      return barePage(found.name, `<ul>${items.join("")}</ul>`)
+      return listPage(found.name, rows, `/${id}/zip${found.rel ? `?path=${encodeURIComponent(found.rel)}` : ""}`)
     }
 
     if (req.method === "GET") {

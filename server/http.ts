@@ -90,6 +90,46 @@ export function barePage(title: string, body: string, status = 200, style = BARE
   })
 }
 
+const LIST_STYLE = `:root{color-scheme:light dark;--bg:oklch(0.97 0.005 85);--fg:oklch(0.25 0 0);--muted:oklch(0.52 0 0)}
+@media (prefers-color-scheme:dark){:root{--bg:oklch(0.17 0 0);--fg:oklch(0.88 0 0);--muted:oklch(0.62 0 0)}}
+html,body{margin:0;min-height:100%;background:var(--bg);color:var(--fg);font:16px/24px "Maple Mono NF CN",ui-monospace,monospace}
+a{color:inherit;text-decoration:none}
+.corner{position:fixed;top:16px;text-transform:uppercase;font-size:14px;line-height:20px;color:var(--muted)}
+.corner:hover{color:var(--fg)}
+.left{left:16px}.right{right:16px}
+main{max-width:640px;margin:0 auto;padding:96px 16px 64px}
+h1{margin:0 0 32px;font-size:24px;line-height:32px;font-weight:600;overflow-wrap:anywhere}
+ul{margin:0;padding:0;list-style:none}
+li a{display:flex;justify-content:space-between;gap:16px;padding:8px 8px;margin:0 -8px}
+li a:hover{background:var(--fg);color:var(--bg)}
+li span:first-child{overflow-wrap:anywhere}
+li span:last-child{flex:none;font-size:14px;color:var(--muted)}
+li a:hover span:last-child{color:var(--bg)}`
+
+// The folder list for a share link: ui.zyx.tw look, a font and a stylesheet from ui.zyx.tw, still no script.
+export function listPage(title: string, rows: { href: string; name: string; note: string }[], zipHref: string) {
+  const items = rows.map(row => `<li><a href="${escapeHtml(row.href)}"><span>${escapeHtml(row.name)}</span><span>${escapeHtml(row.note)}</span></a></li>`).join("")
+  const html = `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>${escapeHtml(title)}</title><link rel="stylesheet" href="https://ui.zyx.tw/fonts/maple-mono-nf-cn.css"><style>${LIST_STYLE}</style></head><body><span class="corner left">s.zyx.tw</span><a class="corner right" href="${escapeHtml(zipHref)}">[ zip ]</a><main><h1>${escapeHtml(title)}</h1><ul>${items}</ul></main></body></html>`
+  return new Response(html, {
+    headers: {
+      ...PUBLIC_HEADERS,
+      "content-type": "text/html; charset=utf-8",
+      "content-security-policy": "default-src 'none'; style-src 'unsafe-inline' https://ui.zyx.tw; font-src https://ui.zyx.tw; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      "x-content-type-options": "nosniff",
+      "cache-control": "no-store",
+    },
+  })
+}
+
+export function formatSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`
+  const units = ["KB", "MB", "GB", "TB"]
+  let value = bytes / 1024
+  let i = 0
+  while (value >= 1024 && i < units.length - 1) { value /= 1024; i++ }
+  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[i]}`
+}
+
 export const FILE_CSP = "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'"
 
 export function fileResponse(req: Request, path: string, name: string, size: number, download: boolean, extra: HeaderMap = {}) {
