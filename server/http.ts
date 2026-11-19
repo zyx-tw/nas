@@ -100,21 +100,35 @@ a{color:inherit;text-decoration:none}
 main{max-width:640px;margin:0 auto;padding:96px 16px 64px}
 h1{margin:0 0 32px;font-size:24px;line-height:32px;font-weight:600;overflow-wrap:anywhere}
 ul{margin:0;padding:0;list-style:none}
-li a{display:flex;justify-content:space-between;gap:16px;padding:8px 8px;margin:0 -8px}
-li a:hover{background:var(--fg);color:var(--bg)}
-li span:first-child{overflow-wrap:anywhere}
-li span:last-child{flex:none;font-size:14px;color:var(--muted)}
-li a:hover span:last-child{color:var(--bg)}`
+li{display:flex;align-items:center;gap:16px;padding:8px 0}
+.thumb{flex:none;display:flex;align-items:center;justify-content:center;width:80px;height:80px;font-size:14px;color:var(--muted)}
+.thumb img{display:block;max-width:100%;max-height:100%}
+.name{flex:1;min-width:0;padding:4px 8px;margin:0 -8px}
+.name span{display:block;overflow-wrap:anywhere}
+.name .note{font-size:14px;color:var(--muted)}
+.name:hover{background:var(--fg);color:var(--bg)}
+.name:hover .note{color:var(--bg)}
+.dl{flex:none;font-size:14px;color:var(--muted);padding:4px 8px;margin:0 -8px}
+.dl:hover{background:var(--fg);color:var(--bg)}`
+
+export type ListRow = { href: string; name: string; note: string; label: string; thumb?: string; download?: string }
 
 // The folder list for a share link: ui.zyx.tw look, a font and a stylesheet from ui.zyx.tw, still no script.
-export function listPage(title: string, rows: { href: string; name: string; note: string }[], zipHref: string) {
-  const items = rows.map(row => `<li><a href="${escapeHtml(row.href)}"><span>${escapeHtml(row.name)}</span><span>${escapeHtml(row.note)}</span></a></li>`).join("")
+export function listPage(title: string, rows: ListRow[], zipHref: string) {
+  const items = rows
+    .map(row => {
+      const mark = row.thumb ? `<img src="${escapeHtml(row.thumb)}" alt="" loading="lazy">` : escapeHtml(row.label)
+      const note = row.note ? `<span class="note">${escapeHtml(row.note)}</span>` : ""
+      const download = row.download ? `<a class="dl" href="${escapeHtml(row.download)}">[ download ]</a>` : ""
+      return `<li><a class="thumb" href="${escapeHtml(row.href)}" tabindex="-1">${mark}</a><a class="name" href="${escapeHtml(row.href)}"><span>${escapeHtml(row.name)}</span>${note}</a>${download}</li>`
+    })
+    .join("")
   const html = `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>${escapeHtml(title)}</title><link rel="stylesheet" href="https://ui.zyx.tw/fonts/maple-mono-nf-cn.css"><style>${LIST_STYLE}</style></head><body><span class="corner left">s.zyx.tw</span><a class="corner right" href="${escapeHtml(zipHref)}">[ zip ]</a><main><h1>${escapeHtml(title)}</h1><ul>${items}</ul></main></body></html>`
   return new Response(html, {
     headers: {
       ...PUBLIC_HEADERS,
       "content-type": "text/html; charset=utf-8",
-      "content-security-policy": "default-src 'none'; style-src 'unsafe-inline' https://ui.zyx.tw; font-src https://ui.zyx.tw; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      "content-security-policy": "default-src 'none'; img-src 'self'; style-src 'unsafe-inline' https://ui.zyx.tw; font-src https://ui.zyx.tw; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
       "x-content-type-options": "nosniff",
       "cache-control": "no-store",
     },
