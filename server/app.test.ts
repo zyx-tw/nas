@@ -382,6 +382,33 @@ describe("shares", () => {
     expect((await req(SHARE, `/${s.id}/thumb?path=n.txt`)).status).toBe(404)
     expect((await req(SHARE, `/${s.id}/thumb?path=../hello.txt`)).status).toBe(400)
   })
+  test.skipIf(!Bun.which("pdftoppm"))("a PDF's thumbnail is its first page", async () => {
+    // One blank page, with the xref table pdftoppm needs.
+    const objects = [
+      "1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n",
+      "2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n",
+      "3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 300]>>endobj\n",
+    ]
+    let pdf = "%PDF-1.4\n"
+    const offsets = objects.map(o => {
+      const at = pdf.length
+      pdf += o
+      return at
+    })
+    const xref = pdf.length
+    pdf += `xref\n0 4\n0000000000 65535 f \n${offsets.map(n => `${String(n).padStart(10, "0")} 00000 n \n`).join("")}`
+    pdf += `trailer<</Size 4/Root 1 0 R>>\nstartxref\n${xref}\n%%EOF\n`
+    await post("/api/files/folder", { path: "pdfs" })
+    await upload("pdfs/a.pdf", pdf)
+    await upload("pdfs/broken.pdf", "%PDF-1.4 nothing")
+    const s = await share("pdfs", null)
+    const html = await (await req(SHARE, `/${s.id}`)).text()
+    expect(html).toContain(`src="/${s.id}/thumb?path=a.pdf"`)
+    const thumb = await req(SHARE, `/${s.id}/thumb?path=a.pdf`)
+    expect(thumb.status).toBe(200)
+    expect(thumb.headers.get("content-type")).toBe("image/webp")
+    expect((await req(SHARE, `/${s.id}/thumb?path=broken.pdf`)).status).toBe(404)
+  })
   test("links follow a move and die with a delete", async () => {
     const s = await share("docs/a.txt")
     expect((await post("/api/files/move", { from: "docs", to: "papers" })).status).toBe(200)
