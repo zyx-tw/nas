@@ -4,7 +4,7 @@
 
 - `server/`: the Bun server. `app.ts` routes by host, `auth.ts` makes sessions from auth.zyx.tw's signed token (`gate.ts` is a copy of `zyx1121/auth/client/gate.ts`; change it there), `files.ts` the owner file API, `shares.ts` links and the public routes, `paths.ts` path safety.
 - `src/`: the React app for nas.zyx.tw (`owner.tsx`). s.zyx.tw has no app: a file link answers with the file itself, and a folder link with a plain list from `barePage`. The shell and `components/ui` come from the task-web starter and ui.zyx.tw; do not edit `components/ui`.
-- `deploy/`: the release bundle, its smoke test, the start script land runs, the unit hardening and the env file shape. A merge to `main` deploys through land; wait with `golem-watch zyx1121/nas <sha>`.
+- `deploy/`: the release bundle, its smoke test, the start script land runs, the unit hardening and the env file shape. A merge to `main` deploys through land; wait with `golem-watch zyx1121/nas <sha>`. The CT needs `poppler-utils` for PDF thumbnails; without `pdftoppm` a PDF shows its label instead.
 
 ## Rules
 
