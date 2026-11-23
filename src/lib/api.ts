@@ -1,4 +1,4 @@
-export type Entry = { name: string; type: "file" | "folder"; size: number; modified: number }
+export type Entry = { name: string; type: "file" | "folder"; size: number; modified: number; thumb?: true }
 
 export type Share = {
   id: string

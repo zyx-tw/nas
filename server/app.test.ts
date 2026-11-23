@@ -76,6 +76,7 @@ describe("hosts and auth", () => {
   })
   test("api needs a session", async () => {
     expect((await req(NAS, "/api/files", { auth: false })).status).toBe(401)
+    expect((await req(NAS, "/api/files/thumb?path=a.png", { auth: false })).status).toBe(401)
   })
   test("writes need the NAS origin", async () => {
     expect((await req(NAS, "/api/files/folder", { method: "POST", body: "{}", headers: { origin: "http://evil.test" } })).status).toBe(403)
@@ -381,6 +382,21 @@ describe("shares", () => {
     expect(bad.headers.get("content-type")).toBe("image/jpeg")
     expect((await req(SHARE, `/${s.id}/thumb?path=n.txt`)).status).toBe(404)
     expect((await req(SHARE, `/${s.id}/thumb?path=../hello.txt`)).status).toBe(400)
+  })
+  test("the owner list marks files with a thumbnail and serves it", async () => {
+    const png = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="), c => c.charCodeAt(0))
+    await post("/api/files/folder", { path: "own" })
+    await req(NAS, `/api/files/content?path=${encodeURIComponent("own/p.png")}`, { method: "PUT", body: png })
+    await upload("own/n.txt", "N")
+    const list = (await (await req(NAS, "/api/files?path=own")).json()) as { entries: { name: string; thumb?: true }[] }
+    expect(list.entries.find(e => e.name === "p.png")?.thumb).toBe(true)
+    expect(list.entries.find(e => e.name === "n.txt")?.thumb).toBeUndefined()
+    const thumb = await req(NAS, "/api/files/thumb?path=own%2Fp.png")
+    expect(thumb.status).toBe(200)
+    expect(thumb.headers.get("content-type")).toBe("image/webp")
+    expect((await req(NAS, "/api/files/thumb?path=own%2Fn.txt")).status).toBe(404)
+    expect((await req(NAS, "/api/files/thumb?path=own")).status).toBe(404)
+    expect((await req(NAS, "/api/files/thumb?path=..%2Fhello.txt")).status).toBe(400)
   })
   test.skipIf(!Bun.which("pdftoppm"))("a PDF's thumbnail is its first page", async () => {
     // One blank page, with the xref table pdftoppm needs.

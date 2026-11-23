@@ -1,6 +1,5 @@
 import { randomBytes } from "node:crypto"
-import { lstat, mkdtemp, readdir, rm } from "node:fs/promises"
-import { tmpdir } from "node:os"
+import { lstat, readdir } from "node:fs/promises"
 import { join } from "node:path"
 import { downloadZip } from "client-zip"
 import type { Config } from "./config"
@@ -9,40 +8,9 @@ import { HttpError, PUBLIC_HEADERS, barePage, contentDisposition, escapeHtml, fi
 import { listFolder } from "./files"
 import { cleanRel, resolveExisting } from "./paths"
 import { log } from "./otel"
+import { thumbResponse } from "./thumbs"
 
 const ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-const THUMB_TYPE = /^image\/(png|jpeg|webp|gif|avif|heic)$/
-const THUMB_MAX_BYTES = 40 * 1024 * 1024
-const THUMB_FALLBACK_BYTES = 2 * 1024 * 1024
-// A PDF's thumbnail is its first page, drawn by pdftoppm (poppler-utils) when the host has it.
-const PDFTOPPM = Bun.which("pdftoppm")
-const PDF_RENDER_MS = 10_000
-
-function hasThumb(name: string, size: number) {
-  if (size > THUMB_MAX_BYTES) return false
-  const mime = Bun.file(name).type.split(";")[0]
-  return THUMB_TYPE.test(mime) || (mime === "application/pdf" && !!PDFTOPPM)
-}
-
-// pdftoppm 26 writes nothing to stdout, so it draws into a private temp dir.
-async function pdfFirstPage(path: string): Promise<Uint8Array | null> {
-  if (!PDFTOPPM) return null
-  const dir = await mkdtemp(join(tmpdir(), "nas-pdf-"))
-  try {
-    const out = join(dir, "page")
-    const proc = Bun.spawn([PDFTOPPM, "-f", "1", "-l", "1", "-singlefile", "-scale-to", "480", "-png", path, out], {
-      stdout: "ignore",
-      stderr: "ignore",
-      timeout: PDF_RENDER_MS,
-    })
-    if ((await proc.exited) !== 0) return null
-    const png = Bun.file(out + ".png")
-    return (await png.exists()) ? await png.bytes() : null
-  } finally {
-    await rm(dir, { recursive: true, force: true })
-  }
-}
-
 export const ID_PATTERN = /^[0-9A-Za-z]{22}$/
 
 // 128 random bits as 22 base62 characters.
@@ -180,19 +148,8 @@ export function createShares(config: Config, db: Db) {
 
     // A small webp of an image or of a PDF's first page, for the folder list. Other files have none.
     if (suffix === "/thumb") {
-      const mime = Bun.file(found.path).type.split(";")[0]
-      if (!found.stat.isFile() || !hasThumb(found.path, found.stat.size)) throw new HttpError(404)
-      if (mime === "application/pdf") {
-        const page = await pdfFirstPage(found.path)
-        const thumb = page && (await new Bun.Image(page).resize(240, 240, { fit: "inside" }).webp({ quality: 80 }).bytes().catch(() => null))
-        if (!thumb) throw new HttpError(404)
-        return new Response(thumb, { headers: { ...PUBLIC_HEADERS, "content-type": "image/webp", "x-content-type-options": "nosniff", "cache-control": "private, max-age=300" } })
-      }
-      const source = await Bun.file(found.path).bytes()
-      const thumb = await new Bun.Image(source).resize(240, 240, { fit: "inside" }).webp({ quality: 80 }).bytes().catch(() => null)
-      // A file the decoder rejects, such as a truncated JPEG, still shows in a browser: send a small one as it is.
-      if (!thumb && source.length > THUMB_FALLBACK_BYTES) throw new HttpError(404)
-      return new Response(thumb ?? source, { headers: { ...PUBLIC_HEADERS, "content-type": thumb ? "image/webp" : mime, "x-content-type-options": "nosniff", "cache-control": "private, max-age=300" } })
+      if (!found.stat.isFile()) throw new HttpError(404)
+      return thumbResponse(found.path, found.stat.size, PUBLIC_HEADERS)
     }
 
     // Video, audio and images fill the window in a bare player page.
@@ -234,13 +191,12 @@ export function createShares(config: Config, db: Db) {
         ...entries.map(entry => {
           const rel = [found.rel, entry.name].filter(Boolean).join("/")
           if (entry.type === "folder") return { href: href(rel), name: entry.name + "/", note: "", label: "/" }
-          const image = hasThumb(entry.name, entry.size)
           return {
             href: href(rel),
             name: entry.name,
             note: formatSize(entry.size),
             label: (entry.name.split(".").pop() ?? "").slice(0, 4).toUpperCase(),
-            thumb: image ? `/${id}/thumb?path=${sub(rel)}` : undefined,
+            thumb: entry.thumb ? `/${id}/thumb?path=${sub(rel)}` : undefined,
             download: `/${id}?path=${sub(rel)}&dl=1`,
           }
         }),

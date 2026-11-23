@@ -253,12 +253,20 @@ function Files({ onSignedOut }: { onSignedOut: () => void }) {
                 <TableCell className="max-w-0 w-full">
                   {entry.type === "folder" ? (
                     <button type="button" className="flex w-full items-center gap-3 text-left" onClick={() => open(joinPath(path, entry.name))}>
-                      <Folder aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                      <span aria-hidden className="flex size-10 shrink-0 items-center justify-center">
+                        <Folder className="size-4 text-muted-foreground" />
+                      </span>
                       <span className="truncate">{entry.name}</span>
                     </button>
                   ) : (
                     <a className="flex items-center gap-3" href={contentUrl(entry)} target="_blank" rel="noreferrer">
-                      <File aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                      <span aria-hidden className="flex size-10 shrink-0 items-center justify-center">
+                        {entry.thumb ? (
+                          <img src={`/api/files/thumb?path=${encodeURIComponent(joinPath(path, entry.name))}`} alt="" loading="lazy" className="max-h-full max-w-full" />
+                        ) : (
+                          <File className="size-4 text-muted-foreground" />
+                        )}
+                      </span>
                       <span className="truncate">{entry.name}</span>
                     </a>
                   )}

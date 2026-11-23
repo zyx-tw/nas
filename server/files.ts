@@ -10,8 +10,10 @@ import { HttpError, fileResponse, json, readJson } from "./http"
 import { cleanRel, resolveExisting, resolveNew } from "./paths"
 import { log } from "./otel"
 import { createSizes } from "./sizes"
+import { hasThumb, thumbResponse } from "./thumbs"
 
-export type Entry = { name: string; type: "file" | "folder"; size: number; modified: number }
+// thumb: the file has a thumbnail at /api/files/thumb (or /<id>/thumb on a share).
+export type Entry = { name: string; type: "file" | "folder"; size: number; modified: number; thumb?: true }
 
 // Files and folders only; symlinks and special files stay hidden.
 // Folders get their size from folderSize when it is given, else 0.
@@ -21,7 +23,8 @@ export async function listFolder(dir: string, folderSize?: (name: string) => Pro
     if (!dirent.isFile() && !dirent.isDirectory()) continue
     const stat = await lstat(join(dir, dirent.name)).catch(() => null)
     if (!stat) continue
-    entries.push({ name: dirent.name, type: dirent.isDirectory() ? "folder" : "file", size: dirent.isDirectory() ? ((await folderSize?.(dirent.name)) ?? 0) : stat.size, modified: stat.mtimeMs })
+    if (dirent.isDirectory()) entries.push({ name: dirent.name, type: "folder", size: (await folderSize?.(dirent.name)) ?? 0, modified: stat.mtimeMs })
+    else entries.push({ name: dirent.name, type: "file", size: stat.size, modified: stat.mtimeMs, ...(hasThumb(dirent.name, stat.size) && { thumb: true as const }) })
   }
   return entries.sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name, "zh-Hant") : a.type === "folder" ? -1 : 1))
 }
@@ -84,6 +87,13 @@ export function createFiles(config: Config, db: Db) {
       const stat = await lstat(file)
       if (!stat.isFile()) throw new HttpError(404)
       return fileResponse(req, file, rel.split("/").pop()!, stat.size, url.searchParams.get("dl") === "1").response
+    }
+
+    if (path === "/api/files/thumb" && req.method === "GET") {
+      const file = await resolveExisting(config.root, cleanRel(url.searchParams.get("path")))
+      const stat = await lstat(file)
+      if (!stat.isFile()) throw new HttpError(404)
+      return thumbResponse(file, stat.size)
     }
 
     if (path === "/api/files/content" && req.method === "PUT") {
