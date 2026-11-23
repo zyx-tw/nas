@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
+import { useCallback, useEffect, useRef, useState, type FormEvent, type RefObject } from "react"
 import { Copy, File, Folder, FolderPlus, MoreHorizontal, Upload, X } from "lucide-react"
 import { toast } from "sonner"
 import { cornerLink } from "@/components/corners"
@@ -11,7 +11,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ApiError, api, formatDate, formatSize, joinPath, post, uploadFile, type Entry, type Share } from "@/lib/api"
 
 type Me = { authenticated: boolean; signOut: string }
@@ -56,42 +55,99 @@ export function OwnerApp() {
     window.location.assign(me!.signOut)
   }
 
-  // The top right corner is text, as every corner is. The d key switches light and dark.
-  const actions = me?.authenticated && (
-    <button type="button" onClick={logout} className={cornerLink}>
-      Sign out
-    </button>
-  )
-
-  return (
-    <TaskShell title="NAS" actions={actions} wide>
-      {me && !me.authenticated && (
-        <section aria-label="Sign in" className="flex gap-3">
-          <Button onClick={login}>Sign in</Button>
-        </section>
-      )}
-      {me?.authenticated && <Workspace onSignedOut={() => setMe({ authenticated: false, signOut: "/" })} />}
-    </TaskShell>
-  )
+  if (!me?.authenticated) {
+    return (
+      <TaskShell title="NAS" wide>
+        {me && (
+          <section aria-label="Sign in" className="flex gap-3">
+            <Button onClick={login}>Sign in</Button>
+          </section>
+        )}
+      </TaskShell>
+    )
+  }
+  return <Workspace onSignOut={logout} onSignedOut={() => setMe({ authenticated: false, signOut: "/" })} />
 }
 
-function Workspace({ onSignedOut }: { onSignedOut: () => void }) {
+type FilesHandle = { newFolder: () => void; upload: () => void }
+
+// The corners carry the place: the path top left, the two views and Sign out top right,
+// all text. The title row carries the page's buttons. The d key switches light and dark.
+function Workspace({ onSignOut, onSignedOut }: { onSignOut: () => void; onSignedOut: () => void }) {
   const [tab, setTab] = useState<"files" | "links">("files")
+  const [path, setPath] = useState(readPath)
+  const files = useRef<FilesHandle | null>(null)
+
+  useEffect(() => {
+    const onPop = () => setPath(readPath())
+    window.addEventListener("popstate", onPop)
+    return () => window.removeEventListener("popstate", onPop)
+  }, [])
+
+  function open(next: string) {
+    window.history.pushState(null, "", next ? `?path=${encodeURIComponent(next)}` : "/")
+    setPath(next)
+  }
+
+  // Files, then each folder of the path. A phone keeps only the last one.
+  const crumbs = ["Files", ...(path ? path.split("/") : [])]
+  const crumb = tab === "files" && (
+    <nav aria-label="Path" className="flex min-w-0 max-w-[calc(100vw-20rem)] items-center gap-4 overflow-hidden whitespace-nowrap max-sm:max-w-[calc(100vw-18rem)]">
+      {crumbs.map((part, index) => {
+        const last = index === crumbs.length - 1
+        return (
+          <span key={index} className={`flex min-w-0 items-center gap-4 ${last ? "" : "max-sm:hidden"}`}>
+            <span aria-hidden className="text-muted-foreground">/</span>
+            {last ? (
+              <span aria-current="page" className="truncate">{part}</span>
+            ) : (
+              <button type="button" className="truncate text-muted-foreground outline-offset-4 transition-colors hover:text-foreground focus-visible:outline-2" onClick={() => open(crumbs.slice(1, index + 1).join("/"))}>
+                {part}
+              </button>
+            )}
+          </span>
+        )
+      })}
+    </nav>
+  )
+
+  const nav = (
+    <>
+      <button type="button" className={cornerLink} aria-current={tab === "files" ? "page" : undefined} onClick={() => setTab("files")}>
+        Files
+      </button>
+      <button type="button" className={cornerLink} aria-current={tab === "links" ? "page" : undefined} onClick={() => setTab("links")}>
+        Links
+      </button>
+      <button type="button" className={cornerLink} onClick={onSignOut}>
+        Sign out
+      </button>
+    </>
+  )
+
+  const titleActions = tab === "files" && (
+    <>
+      <Button variant="outline" onClick={() => files.current?.newFolder()}>
+        <FolderPlus aria-hidden />
+        New folder
+      </Button>
+      <Button onClick={() => files.current?.upload()}>
+        <Upload aria-hidden />
+        Upload
+      </Button>
+    </>
+  )
+
   return (
-    <Tabs value={tab} onValueChange={value => setTab(value as "files" | "links")}>
-      <TabsList className="mb-6">
-        <TabsTrigger value="files">Files</TabsTrigger>
-        <TabsTrigger value="links">Links</TabsTrigger>
-      </TabsList>
-      {tab === "files" ? <Files onSignedOut={onSignedOut} /> : <Links onSignedOut={onSignedOut} />}
-    </Tabs>
+    <TaskShell title="NAS" actions={nav} crumb={crumb} titleActions={titleActions} wide>
+      {tab === "files" ? <Files path={path} open={open} handle={files} onSignedOut={onSignedOut} /> : <Links onSignedOut={onSignedOut} />}
+    </TaskShell>
   )
 }
 
 type Upload_ = { key: number; name: string; progress: number }
 
-function Files({ onSignedOut }: { onSignedOut: () => void }) {
-  const [path, setPath] = useState(readPath)
+function Files({ path, open, handle, onSignedOut }: { path: string; open: (next: string) => void; handle: RefObject<FilesHandle | null>; onSignedOut: () => void }) {
   const [entries, setEntries] = useState<Entry[] | null>(null)
   const [uploads, setUploads] = useState<Upload_[]>([])
   const [dragging, setDragging] = useState(false)
@@ -112,16 +168,13 @@ function Files({ onSignedOut }: { onSignedOut: () => void }) {
 
   useEffect(reload, [reload])
 
+  // The title row's buttons live in Workspace and act through this handle.
   useEffect(() => {
-    const onPop = () => setPath(readPath())
-    window.addEventListener("popstate", onPop)
-    return () => window.removeEventListener("popstate", onPop)
-  }, [])
-
-  function open(next: string) {
-    window.history.pushState(null, "", next ? `?path=${encodeURIComponent(next)}` : "/")
-    setPath(next)
-  }
+    handle.current = { newFolder: () => setNaming({ mode: "folder" }), upload: () => input.current?.click() }
+    return () => {
+      handle.current = null
+    }
+  }, [handle])
 
   async function sendOne(file: File, overwrite = false) {
     const key = nextKey.current++
@@ -169,7 +222,6 @@ function Files({ onSignedOut }: { onSignedOut: () => void }) {
   }
 
   const contentUrl = (entry: Entry, download = false) => `/api/files/content?path=${encodeURIComponent(joinPath(path, entry.name))}${download ? "&dl=1" : ""}`
-  const crumbs = path ? path.split("/") : []
 
   return (
     <section
@@ -189,37 +241,16 @@ function Files({ onSignedOut }: { onSignedOut: () => void }) {
         void send(event.dataTransfer.files)
       }}
     >
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <nav aria-label="Path" className="flex min-w-0 flex-wrap items-center gap-1 text-body text-muted-foreground">
-          <button type="button" className="hover:text-foreground" onClick={() => open("")}>Files</button>
-          {crumbs.map((part, index) => (
-            <span key={index} className="flex items-center gap-1">
-              <span aria-hidden>/</span>
-              <button type="button" className="hover:text-foreground" onClick={() => open(crumbs.slice(0, index + 1).join("/"))}>{part}</button>
-            </span>
-          ))}
-        </nav>
-        <div className="flex gap-3">
-          <Button variant="outline" onClick={() => setNaming({ mode: "folder" })}>
-            <FolderPlus aria-hidden />
-            New folder
-          </Button>
-          <Button onClick={() => input.current?.click()}>
-            <Upload aria-hidden />
-            Upload
-          </Button>
-          <input
-            ref={input}
-            type="file"
-            multiple
-            hidden
-            onChange={event => {
-              void send(event.target.files)
-              event.target.value = ""
-            }}
-          />
-        </div>
-      </div>
+      <input
+        ref={input}
+        type="file"
+        multiple
+        hidden
+        onChange={event => {
+          void send(event.target.files)
+          event.target.value = ""
+        }}
+      />
 
       {uploads.length > 0 && (
         <ul aria-label="Uploading" className="mb-4 flex flex-col gap-2">
