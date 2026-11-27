@@ -77,7 +77,7 @@ Facts for coding agents and LLM tools. The rules for changing the code are in [A
 ## Development
 
 ```sh
-git clone https://github.com/zyx1121/nas && cd nas
+git clone https://github.com/zyx-tw/nas && cd nas
 bun install
 bun test server && bun run typecheck && bun run lint
 ```

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # The release bundle as deployed: copy /release out of the image and run it
 # with the same Bun the CT has. ci runs it with the image loaded as
-# ghcr.io/zyx1121/nas:ci.
+# ghcr.io/zyx-tw/nas:ci.
 set -euo pipefail
-image=${1:-ghcr.io/zyx1121/nas:ci}
+image=${1:-ghcr.io/zyx-tw/nas:ci}
 dir=$(mktemp -d)
 cid=$(docker create "$image" /none)
 docker cp "$cid:/release/." "$dir/"
