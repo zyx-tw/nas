@@ -25,7 +25,7 @@ jobs:
       contents: read
       packages: write
     with:
-      images: '[{"name": "ghcr.io/zyx1121/nas", "file": "deploy/release.Dockerfile"}]'
+      images: '[{"name": "ghcr.io/zyx-tw/nas", "file": "deploy/release.Dockerfile"}]'
       smoke: bash deploy/smoke.sh
 
   promote:
@@ -35,4 +35,4 @@ jobs:
       contents: read
       packages: write
     with:
-      images: '["ghcr.io/zyx1121/nas"]'
+      images: '["ghcr.io/zyx-tw/nas"]'
