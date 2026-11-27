@@ -7,4 +7,4 @@ export const fieldTriggerClassName =
 // than the translucent input token, so the glyphs' 1px overlaps (globals.css)
 // composite once instead of brightening.
 export const fieldFrameClassName =
-  "text-muted-foreground opacity-30 transition duration-state group-focus-visible/field:text-ring group-focus-visible/field:opacity-100 group-has-focus-visible/field:text-ring group-has-focus-visible/field:opacity-100 group-aria-invalid/field:text-destructive group-aria-invalid/field:opacity-100 group-has-aria-invalid/field:text-destructive group-has-aria-invalid/field:opacity-100"
+  "text-muted-foreground transition duration-state group-focus-visible/field:text-ring group-has-focus-visible/field:text-ring group-aria-invalid/field:text-destructive group-has-aria-invalid/field:text-destructive"
