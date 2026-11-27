@@ -94,9 +94,9 @@ const LIST_STYLE = `:root{color-scheme:light dark;--bg:oklch(0.97 0.005 85);--fg
 @media (prefers-color-scheme:dark){:root{--bg:oklch(0.17 0 0);--fg:oklch(0.88 0 0);--muted:oklch(0.62 0 0)}}
 html,body{margin:0;min-height:100%;background:var(--bg);color:var(--fg);font:16px/24px "Maple Mono NF CN",ui-monospace,monospace}
 a{color:inherit;text-decoration:none}
-.corner{position:fixed;top:16px;text-transform:uppercase;font-size:14px;line-height:20px;color:var(--muted)}
+.corner{position:fixed;top:12px;text-transform:uppercase;font-size:16px;line-height:24px;color:var(--muted)}
 .corner:hover{color:var(--fg)}
-.left{left:16px}.right{right:16px}
+.left{left:12px}.right{right:12px}
 main{max-width:640px;margin:0 auto;padding:96px 16px 64px}
 h1{margin:0 0 32px;font-size:24px;line-height:32px;font-weight:600;overflow-wrap:anywhere}
 ul{margin:0;padding:0;list-style:none}
