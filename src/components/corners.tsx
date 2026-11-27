@@ -137,7 +137,7 @@ export function TopCorners({
   return (
     <header>
       {fade && <EdgeFade edge="top" />}
-      <Corner at="top-left" className={className}>
+      <Corner at="top-left" className={cn(crumb ? "gap-2" : undefined, className)}>
         <CornerTip tip={markTip}>
           <a
             href={home}
@@ -148,7 +148,19 @@ export function TopCorners({
             <ZyxMark className="h-5 w-auto group-hover:-scale-x-100 motion-safe:transition-transform motion-safe:duration-overlay" />
           </a>
         </CornerTip>
-        {crumb}
+        {crumb &&
+          (typeof crumb === "string" ? (
+            <p className="flex min-w-0 gap-2">
+              <span aria-hidden="true" className="text-muted-foreground">
+                /
+              </span>
+              <span aria-current="page" className="truncate uppercase">
+                {crumb}
+              </span>
+            </p>
+          ) : (
+            crumb
+          ))}
       </Corner>
       {nav && (
         <Corner at="top-right" className={className}>

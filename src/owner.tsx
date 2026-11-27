@@ -92,11 +92,11 @@ function Workspace({ onSignOut, onSignedOut }: { onSignOut: () => void; onSigned
   // Files, then each folder of the path. A phone keeps only the last one.
   const crumbs = ["Files", ...(path ? path.split("/") : [])]
   const crumb = tab === "files" && (
-    <nav aria-label="Path" className="flex min-w-0 max-w-[calc(100vw-20rem)] items-center gap-4 overflow-hidden whitespace-nowrap max-sm:max-w-[calc(100vw-18rem)]">
+    <nav aria-label="Path" className="flex min-w-0 max-w-[calc(100vw-20rem)] items-center gap-2 overflow-hidden whitespace-nowrap max-sm:max-w-[calc(100vw-18rem)]">
       {crumbs.map((part, index) => {
         const last = index === crumbs.length - 1
         return (
-          <span key={index} className={`flex min-w-0 items-center gap-4 ${last ? "" : "max-sm:hidden"}`}>
+          <span key={index} className={`flex min-w-0 items-center gap-2 ${last ? "" : "max-sm:hidden"}`}>
             <span aria-hidden className="text-muted-foreground">/</span>
             {last ? (
               <span aria-current="page" className="truncate">{part}</span>
