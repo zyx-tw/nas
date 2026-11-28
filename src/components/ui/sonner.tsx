@@ -1,11 +1,14 @@
+"use client"
+
 import {
   CircleCheckIcon,
   InfoIcon,
-  Loader2Icon,
   OctagonXIcon,
   TriangleAlertIcon,
 } from "lucide-react"
 import { Toaster as Sonner, type ToasterProps } from "sonner"
+
+import { Spinner } from "./spinner"
 
 // Unstyled sonner, styled with the tokens only: a layer-2 window with p-6
 // around 40px action buttons.
@@ -18,15 +21,13 @@ const Toaster = ({ ...props }: ToasterProps) => {
         info: <InfoIcon className="size-4 text-muted-foreground" />,
         warning: <TriangleAlertIcon className="size-4 text-foreground" />,
         error: <OctagonXIcon className="size-4 text-destructive" />,
-        loading: (
-          <Loader2Icon className="size-4 animate-spin text-muted-foreground" />
-        ),
+        loading: <Spinner className="text-muted-foreground" />,
       }}
       toastOptions={{
         unstyled: true,
         classNames: {
           toast:
-            "flex w-full items-center gap-3  border border-muted-foreground bg-background p-6 text-body text-foreground",
+            "flex w-full items-center gap-3 rounded-control bg-background p-6 font-sans shadow-window text-body text-foreground",
           icon: "flex size-6 shrink-0 items-center justify-center self-start",
           content: "flex flex-1 flex-col",
           title: "font-medium",
