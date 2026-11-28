@@ -1,5 +1,3 @@
-"use client"
-
 import * as React from "react"
 import { Menu as MenuPrimitive } from "@base-ui/react/menu"
 import { ChevronRightIcon } from "lucide-react"
@@ -8,10 +6,10 @@ import { cn } from "../../lib/utils"
 import { WindowEdges } from "./frame"
 
 const menuSurface =
-  "z-50 max-h-(--available-height) min-w-48 origin-(--transform-origin) overflow-x-hidden overflow-y-auto bg-background p-1 text-body text-foreground duration-overlay outline-none data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:overflow-hidden data-closed:fade-out-0"
+  "z-50 max-h-(--available-height) min-w-48 rounded-control shadow-window origin-(--transform-origin) overflow-x-hidden overflow-y-auto bg-background p-1 text-body text-foreground duration-overlay outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-96 data-closed:animate-out data-closed:overflow-hidden data-closed:fade-out-0 data-closed:zoom-out-96"
 
 const menuRow =
-  "relative flex h-10 cursor-default items-center gap-2  px-3 outline-hidden select-none focus:bg-muted data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
+  "relative flex h-10 cursor-default items-center gap-2 rounded-inner px-3 outline-hidden select-none focus:bg-muted data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0"
 
 function DropdownMenu({ ...props }: MenuPrimitive.Root.Props) {
   return <MenuPrimitive.Root data-slot="dropdown-menu" {...props} />
@@ -36,7 +34,7 @@ function DropdownMenuContent({
   return (
     <MenuPrimitive.Portal>
       <MenuPrimitive.Positioner
-        className="group/window isolate z-50 outline-none"
+        className="group/window isolate z-50 rounded-control outline-none"
         align={align}
         alignOffset={alignOffset}
         side={side}
